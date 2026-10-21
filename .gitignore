@@ -1,0 +1,8 @@
+# Build files
+build/
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Caches
+__pycache__
