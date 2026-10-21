@@ -1,0 +1,36 @@
+name: Port tests
+
+# The Switch port's checks that need no console toolchain, for every push to
+# main and every pull request: the game (the chupathingyce submodule)
+# configures with the port and, without devkitPro and the NDK, writes a
+# build.ninja that says why the Switch's targets are not in it; the port's
+# Python compiles. The console build itself needs devkitPro and the Android
+# NDK (port/switch/README.md).
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: port-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Configure, without devkitPro or the NDK
+        run: |
+          python3 chupathingyce/configure.py --console-port port/switch
+          test -f build.ninja
+          grep -q '^# Switch build: no devkitPro found' build.ninja
+      - name: The port's Python compiles
+        run: python3 -m py_compile port/switch/build.py tools/*.py

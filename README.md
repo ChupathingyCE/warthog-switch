@@ -21,11 +21,15 @@ This repository holds only the Switch's own code: the game is the
 
 **Working: boots and plays on Switch hardware (October 2026).** The port is
 maintained by [thelinkin3000](https://github.com/thelinkin3000). There is no
-release yet. The port's files arrive in this repository's first pull request;
-until then this is the repository's skeleton, and the build stops with a
-message saying so. Every push and pull request is checked by the
-[Build workflow](.github/workflows/build.yml), which builds the `.nro` as
-soon as the port's files are here.
+release yet. The port is here: the game's image with a deko3d renderer, the
+host that runs it as homebrew, the shader cache with deko3d's compiler built
+in, gyro aiming, and internet play with the game list
+([port/switch/README.md](port/switch/README.md) has the whole of it). Every
+push and pull request is checked by the
+[Build workflow](.github/workflows/build.yml), which builds the program and
+the game's image in devkitPro's container; a pushed tag `v<number>` makes a
+release ([Release workflow](.github/workflows/release.yml)), which installed
+builds offer to update to.
 
 Known limits, from the port's changes to the game
 ([chupathingyce#414](https://github.com/ChupathingyCE/chupathingyce/pull/414)):
@@ -49,27 +53,38 @@ Known limits, from the port's changes to the game
   maps work too. Warthog never provides maps, disc images or other game
   data, and never links to them. Don't share yours.
 - **To build it:** [devkitPro](https://devkitpro.org) with devkitA64,
-  libnx and deko3d, and Python 3 and Ninja.
+  libnx, deko3d and the Switch portlibs (SDL2, Mesa, libdrm_nouveau); the
+  Android NDK, which builds the game's half; and Python 3, Ninja and clang.
+  For the shader compiler built into the program: meson, flex, bison 3 and
+  Python's mako. [port/switch/README.md](port/switch/README.md),
+  "Requirements", has the versions and the install commands.
 
 ## Install
 
-1. Build `halo.nro` (see "Building it yourself"), or take it from the
-   Build workflow's artifact on this repository's Actions page.
+1. Build the port (see "Building it yourself"), or take the Build workflow's
+   artifact on this repository's Actions page: the card's folder, with
+   `halo.nro` (the program), `halo_guest.elf` (the game), its menu files and
+   the broker list for internet play.
 2. Copy the `maps` folder from your own disc to your computer.
 3. Lay it out for the SD card:
    `python3 tools/switch_package.py --maps /path/to/maps --out ~/Downloads/warthog-switch`.
-   This puts `halo.nro` and your maps in `switch/halo/`.
+   This puts the build and your maps in `switch/ChupaThingyCE/`.
 4. Copy that `switch` folder to the SD card's root, so the game is in
-   `sd:/switch/halo/`. (With only the `.nro`, put `halo.nro` in
-   `sd:/switch/` and your maps in `sd:/switch/halo/maps/`.)
+   `sd:/switch/ChupaThingyCE/`. (Without maps, the game unpacks a disc image
+   it finds on the card itself: port/switch/README.md, "Game data".)
 5. Start it from the Homebrew Menu.
+
+`tools/switch_deploy.py` sends a build to a console running an FTP server,
+in place of the card going back and forth. A release build asks GitHub for a
+newer release when it starts and offers it; `update.auto = false` in
+`config.toml` turns that off.
 
 ## Building it yourself
 
 ```sh
 git clone --recursive https://github.com/ChupathingyCE/warthog-switch.git
 cd warthog-switch
-python3 chupathingyce/configure.py --console-port port/switch [--devkitpro DIR]
+python3 chupathingyce/configure.py --console-port port/switch [--devkitpro DIR] [--android-ndk DIR]
 ninja switch
 ```
 
@@ -77,21 +92,18 @@ ninja switch
 targets to it; the game's
 [docs/building.md](https://github.com/ChupathingyCE/chupathingyce/blob/main/docs/building.md),
 "Console ports", has the layout and the options every console takes.
-devkitPro is found at `--devkitpro DIR`, `DEVKITPRO`, or `/opt/devkitpro`.
+devkitPro is found at `--devkitpro DIR`, `DEVKITPRO`, or `/opt/devkitpro`;
+the NDK at `--android-ndk DIR` or `ANDROID_NDK_HOME`. The first build
+downloads musl, SDL and the shader compiler's sources to
+`build/switch/third_party`.
 
-Or in devkitPro's own container, as the Build workflow does, with no
-devkitPro install on your computer (Docker):
-
-```sh
-docker run --rm -v "$PWD":/work -w /work devkitpro/devkita64 sh -c '
-  apt-get update && apt-get install -y --no-install-recommends git python3 ninja-build &&
-  git config --global --add safe.directory "*" &&
-  python3 chupathingyce/configure.py --console-port port/switch --devkitpro "$DEVKITPRO" &&
-  ninja switch'
-```
+The [Build workflow](.github/workflows/build.yml) is the same build in
+devkitPro's container, with the NDK and LLVM's clang added to the image: a
+way to build without a devkitPro install, and the set-up to copy if you want
+to do it in Docker on your computer.
 
 `tools/switch_package.py` lays out the build and your maps for the SD card
-(`sd:/switch/halo/`).
+(`sd:/switch/ChupaThingyCE/`).
 
 After a `git pull`, run `git submodule update` to move the game to the
 version this repository uses.
@@ -115,9 +127,11 @@ is in [LICENSE](LICENSE).
 - **The Switch port** is thelinkin3000's work, contributed under
   GPL-3.0-or-later.
 - **The game** (`chupathingyce/`) has its own license notes in its README.
-- **Third-party code** keeps its own license, which goes beside it. The
-  build links devkitPro's libnx (ISC) and deko3d (zlib) from your devkitPro
-  install; they are not included here.
+- **Third-party code** keeps its own license, which goes beside it:
+  nanosvg (zlib) in `port/switch/third_party`. The build links devkitPro's
+  libnx (ISC) and deko3d (zlib) from your devkitPro install, and builds
+  deko3d's shader compiler UAM (zlib) into the program from its own
+  download; they are not included here.
 - **Halo itself is not covered.** The license covers the work of this
   repository's and Chupathingy's authors. It gives no rights in Halo, its
   maps or anything else Microsoft owns.
