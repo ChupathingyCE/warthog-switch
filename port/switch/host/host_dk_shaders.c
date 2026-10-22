@@ -22,9 +22,14 @@ other UAM versions' - are removed, and nothing else is touched. The
 generators' version is in the guest's hash, so a generator change makes new
 names, not a new folder; a stale file is just never asked for.
 
-One compile thread (step 1 measured more to be slower), which moves itself
-off the game thread's core (host_thread.c's place_thread) and never touches
-deko3d: it takes the queue's most urgent entry, compiles it with
+Two compile threads (DKSH_COMPILE_THREADS), each moving itself off the game
+thread's core onto a helper core of its own (host_thread.c's place_thread),
+and never touching deko3d. Step 1 measured two threads slower than one; step
+4 found why - newlib's malloc, one lock for the whole process, which Mesa
+takes some 57,000 times a shader - and UAM's allocations are now
+host_uam_alloc.c's, each thread's own: the corpus of 744 shaders compiled in
+24.5 s on one thread before, 16.3 s on one thread after, and 8.8 s on two.
+Each takes the queue's most urgent entry, compiles it with
 host_dk_compile_glsl into memory, and adds its hash to the set; a load takes
 it from memory until the writer has put it on the card. Loading is
 the game thread's (the only thread that touches deko3d), about 2 ms a
@@ -83,6 +88,9 @@ than a quarter of it. */
 /* the compile thread's stack: Mesa's compiler recurses, and 2 MB is what
 the probe's workers ran with (phase 5, step 1) */
 #define DKSH_THREAD_STACK (2 * 1024 * 1024)
+/* the compile threads: one for each helper core (the console gives a title
+three, and the game thread keeps one to itself) */
+#define DKSH_COMPILE_THREADS 2
 
 /* the DKSH file's header, as the probe's shader_load reads it */
 struct dksh_header
@@ -212,17 +220,20 @@ static struct
 	(minimum priority), first queued among equals */
 	struct dksh_request *queue;
 	uint32_t queue_count, queue_capacity;
-	pthread_t compile_thread;
+	int compile_threads;
 
-	/* the shader the compile thread has taken off the queue and not yet
+	/* the shader each compile thread has taken off the queue and not yet
 	finished: neither queued nor on the card, it is still being made, and a
 	find says so rather than "unknown" (which would have it queued again) */
-	int compiling;
-	uint64_t compiling_hash;
-	uint32_t compiling_stage;
-	uint32_t compiling_priority;
+	struct
+	{
+		int active;
+		uint64_t hash;
+		uint32_t stage;
+		uint32_t priority;
+	} compiling[DKSH_COMPILE_THREADS];
 
-	/* the compile thread's progress, for the log */
+	/* the compile threads' progress, for the log */
 	unsigned long compiled, failed;
 	unsigned long logged;
 
@@ -293,6 +304,31 @@ static uint32_t set_slot(uint64_t hash)
 			break;
 	}
 	return slot;
+}
+
+/* whether a compile thread is making this shader now (under the lock) */
+static int compiling_has(uint64_t hash, uint32_t stage)
+{
+	int index;
+
+	for (index = 0; index < DKSH_COMPILE_THREADS; index++)
+	{
+		if (dksh.compiling[index].active && dksh.compiling[index].hash == hash && dksh.compiling[index].stage == stage)
+			return 1;
+	}
+	return 0;
+}
+
+/* how many shaders the compile threads are making now, of priority
+`priority` or more urgent (UINT32_MAX: all of them); under the lock */
+static uint32_t compiling_count(uint32_t priority)
+{
+	uint32_t count = 0;
+	int index;
+
+	for (index = 0; index < DKSH_COMPILE_THREADS; index++)
+		count += dksh.compiling[index].active && dksh.compiling[index].priority <= priority ? 1 : 0;
+	return count;
 }
 
 static struct dksh_slot *set_find(uint64_t hash)
@@ -829,11 +865,12 @@ static int pending_add_locked(uint64_t hash, uint32_t stage, void *data, size_t 
 
 /* ---------- the compile thread */
 
-static void *compile_thread(void *unused)
+static void *compile_thread(void *context)
 {
+	/* this thread's place in dksh.compiling */
+	int mine = (int)(intptr_t)context;
 	unsigned long since_logged = 0;
 
-	(void)unused;
 	/* off the game thread's core (host_thread.c), as libnx would otherwise
 	leave this on the core the process starts threads on */
 	host_thread_place_on_helper_core();
@@ -867,10 +904,10 @@ static void *compile_thread(void *unused)
 		}
 		request = dksh.queue[pick];
 		dksh.queue[pick] = dksh.queue[--dksh.queue_count];
-		dksh.compiling = 1;
-		dksh.compiling_hash = request.hash;
-		dksh.compiling_stage = request.stage;
-		dksh.compiling_priority = request.priority;
+		dksh.compiling[mine].active = 1;
+		dksh.compiling[mine].hash = request.hash;
+		dksh.compiling[mine].stage = request.stage;
+		dksh.compiling[mine].priority = request.priority;
 		pthread_mutex_unlock(&dksh.lock);
 
 		/* compiled into memory: the card is the writer's, every
@@ -882,7 +919,7 @@ static void *compile_thread(void *unused)
 		free(request.glsl);
 
 		pthread_mutex_lock(&dksh.lock);
-		dksh.compiling = 0;
+		dksh.compiling[mine].active = 0;
 		if (ok && pending_add_locked(request.hash, request.stage, dksh_data, dksh_size, 0))
 		{
 			dksh_data = NULL;
@@ -1171,16 +1208,26 @@ static void service_start(void)
 	cache_scan();
 	pthread_attr_init(&attributes);
 	pthread_attr_setstacksize(&attributes, DKSH_THREAD_STACK);
-	if (pthread_create(&dksh.compile_thread, &attributes, compile_thread, NULL) != 0)
 	{
-		host_logf(HOST_LOG_ERROR, "dk shader: the compile thread could not be made; shaders are only loaded, never "
-			"compiled");
-		dksh.compile_thread = 0;
-	}
-	else
-	{
-		pthread_detach(dksh.compile_thread);
-		host_logf(HOST_LOG_INFO, "dk shader: one compile thread (UAM %s)", HOST_DK_UAM_COMMIT);
+		int index;
+
+		/* (one after the other, so that each is placed on the next helper
+		core: host_thread.c) */
+		for (index = 0; index < DKSH_COMPILE_THREADS; index++)
+		{
+			pthread_t thread;
+
+			if (pthread_create(&thread, &attributes, compile_thread, (void *)(intptr_t)index) != 0)
+				break;
+			pthread_detach(thread);
+			dksh.compile_threads++;
+		}
+		if (!dksh.compile_threads)
+			host_logf(HOST_LOG_ERROR, "dk shader: no compile thread could be made; shaders are only loaded, never "
+				"compiled");
+		else
+			host_logf(HOST_LOG_INFO, "dk shader: %d compile threads (UAM %s)", dksh.compile_threads,
+				HOST_DK_UAM_COMMIT);
 	}
 	{
 		pthread_t writer;
@@ -1572,7 +1619,7 @@ uint32_t host_dk_shader_find(uint32_t stage, uint64_t hash, uint32_t state_out)
 		/* not on the card: being compiled, or queued? */
 		uint32_t index;
 
-		if (dksh.compiling && dksh.compiling_hash == hash && dksh.compiling_stage == stage)
+		if (compiling_has(hash, stage))
 			state = 1;
 		for (index = 0; !state && index < dksh.queue_count; index++)
 		{
@@ -1628,7 +1675,7 @@ uint32_t host_dk_shader_known(uint32_t stage, uint64_t hash)
 		slot_live(slot);
 	if (slot && slot->stage == stage && !slot->broken)
 		known = slot->handle ? 3 : 2;
-	else if (dksh.compiling && dksh.compiling_hash == hash && dksh.compiling_stage == stage)
+	else if (compiling_has(hash, stage))
 		known = 1;
 	for (index = 0; !known && index < dksh.queue_count; index++)
 	{
@@ -1678,7 +1725,7 @@ uint32_t host_dk_shader_pending(void)
 	if (!dksh.started)
 		return 0;
 	pthread_mutex_lock(&dksh.lock);
-	pending = dksh.queue_count + (dksh.compiling ? 1 : 0);
+	pending = dksh.queue_count + compiling_count(UINT32_MAX);
 	pthread_mutex_unlock(&dksh.lock);
 	return pending;
 }
@@ -1705,7 +1752,7 @@ uint32_t host_dk_shader_pending_urgent(uint32_t priority)
 	if (!dksh.started)
 		return 0;
 	pthread_mutex_lock(&dksh.lock);
-	pending = dksh.compiling && dksh.compiling_priority <= priority ? 1 : 0;
+	pending = compiling_count(priority);
 	for (index = 0; index < dksh.queue_count; index++)
 		pending += dksh.queue[index].priority <= priority ? 1 : 0;
 	pthread_mutex_unlock(&dksh.lock);
@@ -1724,8 +1771,7 @@ void host_dk_shader_compile(uint32_t stage, uint64_t hash, uint32_t glsl, uint32
 
 		/* already on the card (and its file good), or being compiled:
 		nothing to ask for */
-		if ((slot && !slot->broken) ||
-			(dksh.compiling && dksh.compiling_hash == hash && dksh.compiling_stage == stage))
+		if ((slot && !slot->broken) || compiling_has(hash, stage))
 		{
 			pthread_mutex_unlock(&dksh.lock);
 			return;

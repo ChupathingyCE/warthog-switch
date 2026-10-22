@@ -9,9 +9,11 @@ renames every symbol this object and UAM's library define and keeps only
 host_dk_compile_glsl, which is what lets UAM sit beside Mesa (both are
 Mesa's GLSL compiler; the probe's Makefile found the clash and the fix).
 
-The lock is not for the compile thread - there is one, and it is the only
-caller - but for certainty: nothing else may ever be inside UAM at the same
-time, and the lock costs nothing next to a compile.
+Two compile threads call it at once (host_dk_shaders.c): uam.patch made
+UAM's locks real and its front end's state each thread's own (DEKO3D.md,
+phase 5, step 1), and its allocations are host_uam_alloc.c's, each thread's
+own, as the build renames them (step 4: newlib's malloc, one lock for the
+process, was what made two threads slower than one).
 
 The front end is initialised once and kept for the program's life
 (uam.patch, phase 5, step 1: releasing it made every compile rebuild Mesa's
@@ -27,20 +29,15 @@ C++ because UAM is.
 
 #include "compiler_iface.h"
 
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-/* host_main.c's card lock (host.h), spelled out so this file needs none of
-the host's headers: only UAM's own paths and defines compile it */
 extern "C" int host_dk_compile_glsl(int fragment, const char *glsl, void **dksh, size_t *dksh_size)
 {
-	static pthread_mutex_t compile_lock = PTHREAD_MUTEX_INITIALIZER;
 	int ok = 0;
 
 	*dksh = NULL;
 	*dksh_size = 0;
-	pthread_mutex_lock(&compile_lock);
 	{
 		DekoCompiler compiler{fragment ? pipeline_stage_fragment : pipeline_stage_vertex};
 
@@ -69,6 +66,5 @@ extern "C" int host_dk_compile_glsl(int fragment, const char *glsl, void **dksh,
 			}
 		}
 	}
-	pthread_mutex_unlock(&compile_lock);
 	return ok;
 }

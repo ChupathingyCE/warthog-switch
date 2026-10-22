@@ -887,6 +887,18 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
         nm_bin = host_cc.parent / "aarch64-none-elf-nm"
         objcopy_bin = host_cc.parent / "aarch64-none-elf-objcopy"
         ld_bin = host_cc.parent / "aarch64-none-elf-ld"
+        # UAM's allocations go to the host's allocator for it
+        # (port/switch/host/host_uam_alloc.c), each thread's own: newlib's
+        # malloc has one lock for the process, and two compile threads on it
+        # were slower than one (DEKO3D.md, phase 5, step 4). Every call of
+        # the C library's and C++'s, renamed with the rest.
+        uam_allocations = [("malloc", "host_uam_malloc"), ("calloc", "host_uam_calloc"),
+                           ("realloc", "host_uam_realloc"), ("free", "host_uam_free"),
+                           ("strdup", "host_uam_strdup"), ("strndup", "host_uam_strndup"),
+                           ("_Znwm", "host_uam_new"), ("_Znam", "host_uam_new_array"),
+                           ("_ZdlPv", "host_uam_delete"), ("_ZdaPv", "host_uam_delete_array")]
+        allocation_lines = " ".join(f"'{old} {new}'" for old, new in uam_allocations)
+        allocation_globals = " ".join(f"--keep-global-symbol={new}" for _, new in uam_allocations)
         n.rule(
             name="switch_uam_combine",
             command=(
@@ -894,8 +906,9 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
                 f"{nm_bin} --defined-only {combined} | awk '{{print $$3}}' | "
                 f"grep -v -e '^host_dk_compile_glsl$$' -e '^\\$$' | sort -u | "
                 f"awk '{{print $$1\" uam_\"$$1}}' > {symbols} && "
+                f"printf '%s\\n' {allocation_lines} >> {symbols} && "
                 f"{objcopy_bin} --redefine-syms={symbols} --keep-global-symbol=host_dk_compile_glsl "
-                f"{combined} $out"
+                f"{allocation_globals} {combined} $out"
             ),
             description="SWITCH UAM COMBINE $out",
         )

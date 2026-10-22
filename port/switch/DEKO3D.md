@@ -36,7 +36,7 @@ words each.
 | The Mesa renderer on the Switch | **Kept, selectable for good** in `config.toml`. |
 | Shader compiler | UAM's compiler, linked into the Switch host and run on the console (it builds for the Switch). |
 | What players share | **Keys**, not compiled shaders: a key is data, compiled shaders are GPU code nobody can check, and keys survive changes to the generators and the compiler. |
-| Compiling the known keys a console has not cached (43 s on one core with UAM's front end kept alive, phase 5 step 1) | **In the background, on one thread, while the game runs** - no waiting screen. Several threads were measured slower than one (phase 5, step 1). Draws whose shader is not ready are skipped, and the keys they need go to the front; the cache keeps every shader compiled, so it happens once a console (and again after a change to the generators or UAM). |
+| Compiling the known keys a console has not cached (24.5 s on one core in memory with newlib's malloc; 8.8 s on two with the host's allocator for UAM, phase 5 "two compile threads") | **In the background, on two threads (one on each helper core), while the game runs** - no waiting screen. Several threads were measured slower than one (phase 5, step 1) until UAM's allocations were each thread's own (host_uam_alloc.c). Draws whose shader is not ready are skipped, and the keys they need go to the front; the cache keeps every shader compiled, so it happens once a console (and again after a change to the generators or UAM). |
 
 ---
 
@@ -1495,6 +1495,55 @@ Found on the console, and fixed or worked around:
   first), and the index range each indexed draw scans (no cache, unlike
   `d3d8_gl.c`'s: without the mirror there is no write generation to tell a
   cached range is stale - phase 7's question).
+
+### Phase 5, two compile threads: the allocator (2026-10-22)
+
+Step 1's guess - Mesa's type table's lock - was wrong. The probe's memory
+corpus (`port/switch/probe/deko3d`, step 5 of its list) reads the 744
+shaders into memory first, compiles into memory, and times every wait on
+UAM's mutexes (its `pthread_mutex_lock` renamed to a timing wrapper) and on
+newlib's malloc lock (`--wrap=__malloc_lock`):
+
+| Allocator | Threads | Time | malloc lock taken | waiting on it, all workers |
+|---|---|---|---|---|
+| newlib | 1 | 24.5 s | 44.8 million | 0.01 s |
+| newlib | 2 | 66-71 s | 45.2 million | 78-84 s |
+| newlib | 3 | 104 s | 43.0 million | 233 s |
+| host_uam_alloc | 1 | 16.3-16.6 s | 72,500 | 0 |
+| host_uam_alloc | 2 | 8.7-8.9 s | 71,000 | 0.01-0.02 s |
+| host_uam_alloc | 3 | 6.2 s | 70,000 | 0.05 s |
+
+- **`glsl_type::hash_mutex` and `builtins_lock`** are taken 10,016 and
+  67,862 times a corpus and waited on at most 0.5 ms in all: not the cause.
+- **newlib's malloc is**: Mesa allocates some 57,000 times a shader, every
+  malloc and free takes the process's one lock, and libnx's mutex never
+  spins - a lock found taken is `svcArbitrateLock` at once, and its release
+  `svcArbitrateUnlock` - so two threads hand the lock to each other through
+  the kernel at nearly every allocation. Step 1's 43 s on one thread was
+  also mostly the card (each shader read and its DKSH written inside the
+  timing): 24.5 s in memory.
+- **`port/switch/host/host_uam_alloc.c`**: blocks of up to 8 KB from the
+  calling thread's free lists (26 size classes, 64 KB pages of one class,
+  cut from 2 MB regions newlib gives aligned), the lock taken once a page;
+  larger blocks and `aligned_alloc` are newlib's, and free tells them apart
+  by the table of regions. A thread that stops gives its lists to a pool
+  (`host_uam_alloc_thread_end`). The build's UAM combine step
+  (`tools/switch_build.py`) renames UAM's malloc, calloc, realloc, free,
+  strdup, strndup and C++'s new and delete to it, as the probe's Makefile
+  does; stress-tested on the PC under AddressSanitizer and ThreadSanitizer.
+- **The host**: two compile threads (`DKSH_COMPILE_THREADS` in
+  `host_dk_shaders.c`), one on each helper core, and `host_dk_compiler.cpp`
+  without the lock that kept one compile at a time.
+- **The same compile is not always the same bytes**: one thread compiling
+  the corpus twice gave 13 vertex shaders differing by one byte (`0x84`/`0x88`,
+  `0xe1`/`0xe2`, `0x20`/`0x40`), as step 1's threads did. UAM chooses
+  between equivalent registers or slots by where things lie in memory;
+  either is right.
+- **UAM keeps about 7 KB a shader** (5-6 MB a corpus) that no pass frees,
+  with either allocator: most likely Mesa's array types, which its table
+  keys by their element type's address, made anew for each shader's
+  structures. A first start compiles the corpus once; later starts compile
+  only what is new.
 
 ### Phase 5, steps 2 to 4
 
