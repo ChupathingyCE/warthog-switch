@@ -1,0 +1,70 @@
+name: Build
+
+# Builds the Switch port in devkitPro's official devkitA64 container, for
+# every push to main, every pull request and by hand. The port's sources
+# (port/switch/src) arrive in this repository's first port pull request; until
+# then the build step is skipped with a notice and the run passes, and the
+# first run with sources builds the .nro. No secrets are used, and no game
+# files: the packaging step is checked with an empty placeholder ui.map that
+# never goes into the artifact.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  switch:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64
+    steps:
+      - name: Install git, Python and Ninja
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git python3 ninja-build
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: true
+
+      - name: Look for the port's sources
+        id: sources
+        run: |
+          if find port/switch -type f \( -name '*.c' -o -name '*.cpp' \) | grep -q .; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Switch build skipped::port/switch has no sources yet. The build runs as soon as the port's code is merged."
+          fi
+
+      - name: Configure
+        if: steps.sources.outputs.present == 'true'
+        run: python3 chupathingyce/configure.py --console-port port/switch --devkitpro "$DEVKITPRO"
+
+      - name: Build
+        if: steps.sources.outputs.present == 'true'
+        run: ninja switch
+
+      - name: Package
+        if: steps.sources.outputs.present == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/placeholder-maps"
+          : > "$RUNNER_TEMP/placeholder-maps/ui.map"
+          python3 tools/switch_package.py --maps "$RUNNER_TEMP/placeholder-maps" --out package
+          rm -rf package/switch/halo/maps
+
+      - name: Upload the .nro
+        if: steps.sources.outputs.present == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: warthog-switch-${{ github.sha }}
+          path: package/switch/halo/halo.nro
+          if-no-files-found: error

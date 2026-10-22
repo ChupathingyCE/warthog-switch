@@ -19,20 +19,50 @@ This repository holds only the Switch's own code: the game is the
 
 ## Status
 
-**In development** by thelinkin3000 and puginatux. There is no release yet.
-The port's files arrive in this repository's first pull request; until then
-this is the repository's skeleton, and the build stops with a message saying
-so.
+**Working: boots and plays on Switch hardware (October 2026).** The port is
+maintained by [thelinkin3000](https://github.com/thelinkin3000). There is no
+release yet. The port's files arrive in this repository's first pull request;
+until then this is the repository's skeleton, and the build stops with a
+message saying so. Every push and pull request is checked by the
+[Build workflow](.github/workflows/build.yml), which builds the `.nro` as
+soon as the port's files are here.
+
+Known limits, from the port's changes to the game
+([chupathingyce#414](https://github.com/ChupathingyCE/chupathingyce/pull/414)):
+
+- **Sprites:** at most 8 sprites that cover more than half the view are drawn
+  in a frame (`display.big_sprite_limit`; the Xbox drew 11), to keep the
+  Halo level's falls within the Switch's GPU time.
+- **Zoom and cutscene blurs:** drawn on a smaller copy of the screen, so they
+  are a little softer than on other builds. `debug.original_zoom` and
+  `debug.original_blur` draw them as the game does.
+- **Hosted games:** up to 48 players, which the console was measured to hold.
+- **Gyro aiming:** `input.gyro_aim` (always, only while zoomed in, or off), on
+  Controls Setup's GYRO page.
 
 ## What you'll need
 
 - **A Switch that runs homebrew** (Atmosphere), with room on its SD card for
   the game's files.
-- **Your own Halo game files.** Chupathingy needs the maps from a copy of
-  Halo you own. They are never included or shared here, on the site or on
-  the Discord.
+- **Your own Halo disc's maps.** The North American (NTSC) release,
+  01.10.12.2276, as every Chupathingy build and server uses. The PAL disc's
+  maps work too. Warthog never provides maps, disc images or other game
+  data, and never links to them. Don't share yours.
 - **To build it:** [devkitPro](https://devkitpro.org) with devkitA64,
   libnx and deko3d, and Python 3 and Ninja.
+
+## Install
+
+1. Build `halo.nro` (see "Building it yourself"), or take it from the
+   Build workflow's artifact on this repository's Actions page.
+2. Copy the `maps` folder from your own disc to your computer.
+3. Lay it out for the SD card:
+   `python3 tools/switch_package.py --maps /path/to/maps --out ~/Downloads/warthog-switch`.
+   This puts `halo.nro` and your maps in `switch/halo/`.
+4. Copy that `switch` folder to the SD card's root, so the game is in
+   `sd:/switch/halo/`. (With only the `.nro`, put `halo.nro` in
+   `sd:/switch/` and your maps in `sd:/switch/halo/maps/`.)
+5. Start it from the Homebrew Menu.
 
 ## Building it yourself
 
@@ -49,6 +79,17 @@ targets to it; the game's
 "Console ports", has the layout and the options every console takes.
 devkitPro is found at `--devkitpro DIR`, `DEVKITPRO`, or `/opt/devkitpro`.
 
+Or in devkitPro's own container, as the Build workflow does, with no
+devkitPro install on your computer (Docker):
+
+```sh
+docker run --rm -v "$PWD":/work -w /work devkitpro/devkita64 sh -c '
+  apt-get update && apt-get install -y --no-install-recommends git python3 ninja-build &&
+  git config --global --add safe.directory "*" &&
+  python3 chupathingyce/configure.py --console-port port/switch --devkitpro "$DEVKITPRO" &&
+  ninja switch'
+```
+
 `tools/switch_package.py` lays out the build and your maps for the SD card
 (`sd:/switch/halo/`).
 
@@ -57,7 +98,8 @@ version this repository uses.
 
 ## Credits
 
-- **thelinkin3000**: the Switch port.
+- [thelinkin3000](https://github.com/thelinkin3000): the Switch port, and its
+  maintainer.
 - **puginatux**: the Switch port.
 - **Chupathingy** and its contributors: the game
   ([its README](https://github.com/ChupathingyCE/chupathingyce#readme) has the full credits).
