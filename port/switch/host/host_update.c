@@ -18,7 +18,14 @@ not compressed - the release is zipped with zip -0 - and each file's size and
 CRC come before its data, so it is unpacked as it downloads: the two files the
 port needs are written beside the old ones as .new, checked against their CRC,
 and only then put in place. The archive itself is never kept, which saves
-17 MB of card and the time to write it.
+17 MB of card and the time to write it. The port's menu files
+(menus/<style>/<file>.xml, tools/switch_menus.py: the files on the card the
+game reads in place of its embedded menus) come in the archive too, and are
+written to menus.new, which takes the place of menus with the new game image
+at the next start: the files are the image's, and a file a release no longer
+has is gone. Releases are ChupathingyCE/warthog-switch's
+(.github/workflows/release.yml), the archive the card's folder as
+tools/switch_package.py lays it out.
 
 Nothing restarts. The program being run is replaced at once - the loader read
 it whole when it started - and the player is told to quit and start the game
@@ -46,7 +53,10 @@ has are kept.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <switch.h>
 
@@ -63,7 +73,7 @@ has are kept.
 #define HALO_BUILD_FLAVOR "release"
 #endif
 
-#define UPDATE_REPOSITORY "ChupathingyCE/warthog"
+#define UPDATE_REPOSITORY "ChupathingyCE/warthog-switch"
 /* the shared shader keys, and their SHA-1 (sha1sum's line, or just the hash) */
 #define KEYS_URL "https://raw.githubusercontent.com/" UPDATE_REPOSITORY "/main/keys.dkk"
 #define KEYS_SHA1_URL "https://raw.githubusercontent.com/" UPDATE_REPOSITORY "/main/keys.sha1"
@@ -75,6 +85,10 @@ named it: an update takes it away (install) */
 #define UPDATE_OLD_DK_IMAGE "halo_guest_dk.elf"
 /* internet play's brokers (network.brokers_file), beside config.toml */
 #define UPDATE_BROKERS "brokers.txt"
+/* the port's menu files: the archive's menus/, to menus.new beside the
+program while the update downloads, menus at the next start */
+#define UPDATE_MENUS "menus"
+#define UPDATE_MENUS_NEW "menus.new"
 
 enum
 {
@@ -82,9 +96,11 @@ enum
 	ZIP_LOCAL_SIGNATURE = 0x04034b50,
 	ZIP_CENTRAL_SIGNATURE = 0x02014b50,
 	/* the files taken from the archive: the program and the game image,
-	which it must hold, then the brokers, which it may */
+	which it must hold, then the brokers, which it may; and, past them, any
+	number of menu files */
 	WANTED_FILES = 3,
 	REQUIRED_FILES = 2,
+	MENU_FILE = WANTED_FILES,
 	PROGRESS_EVERY = 512 * 1024,
 };
 
@@ -141,6 +157,88 @@ static void wanted_path(int which, char *path, size_t size)
 	else
 		snprintf(path, size, "%s/%s", host_executable_root(),
 			which == 1 ? UPDATE_IMAGE : UPDATE_BROKERS);
+}
+
+/* whether an archive entry is one of the menu files: menus/<folders>/<file>,
+plain names only (letters, digits, dot, underscore, dash), no empty or dotted
+folder, no folder entry */
+static int menu_entry(const char *name)
+{
+	const char *prefix = UPDATE_MENUS "/";
+	const char *cursor;
+	int piece = 0;
+
+	if (strncmp(name, prefix, strlen(prefix)) != 0)
+		return 0;
+	for (cursor = name + strlen(prefix); *cursor; cursor++)
+	{
+		char c = *cursor;
+
+		if (c == '/')
+		{
+			if (!piece)
+				return 0;
+			piece = 0;
+			continue;
+		}
+		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' ||
+			c == '-'))
+			return 0;
+		if (c == '.' && !piece && (cursor[1] == '/' || cursor[1] == '.' || !cursor[1]))
+			return 0;
+		piece++;
+	}
+	return piece > 0;
+}
+
+/* the path a menu entry is written to (under menus.new), its folders made;
+0 if a folder cannot be */
+static int menu_entry_path(const char *name, char *path, size_t size)
+{
+	size_t root = strlen(host_executable_root()) + 1;
+	char *cursor;
+
+	if (snprintf(path, size, "%s/%s/%s", host_executable_root(), UPDATE_MENUS_NEW, name + strlen(UPDATE_MENUS "/")) >=
+		(int)size)
+		return 0;
+	for (cursor = path + root; *cursor; cursor++)
+	{
+		if (*cursor != '/')
+			continue;
+		*cursor = 0;
+		if (mkdir(path, 0777) != 0 && errno != EEXIST)
+			return 0;
+		*cursor = '/';
+	}
+	return 1;
+}
+
+/* a folder and everything in it, or a file */
+static void remove_tree(const char *path)
+{
+	DIR *directory = opendir(path);
+	struct dirent *entry;
+
+	if (!directory)
+	{
+		remove(path);
+		return;
+	}
+	while ((entry = readdir(directory)) != NULL)
+	{
+		char child[600];
+		struct stat info;
+
+		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+			continue;
+		snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+		if (stat(child, &info) == 0 && S_ISDIR(info.st_mode))
+			remove_tree(child);
+		else
+			remove(child);
+	}
+	closedir(directory);
+	rmdir(path);
 }
 
 /* ---------- the check */
@@ -290,7 +388,7 @@ static int unpack_entry(struct unpack *unpack)
 
 	unpack->name[unpack->name_length < sizeof(unpack->name) ? unpack->name_length : sizeof(unpack->name) - 1] = 0;
 	which = !strcmp(unpack->name, UPDATE_PROGRAM) ? 0 : !strcmp(unpack->name, UPDATE_IMAGE) ? 1 :
-		!strcmp(unpack->name, UPDATE_BROKERS) ? 2 : -1;
+		!strcmp(unpack->name, UPDATE_BROKERS) ? 2 : menu_entry(unpack->name) ? MENU_FILE : -1;
 	unpack->remaining = compressed;
 	unpack->expected_crc = little(header + 14, 4);
 	unpack->crc = 0;
@@ -303,8 +401,16 @@ static int unpack_entry(struct unpack *unpack)
 .github/workflows/build.yml) */
 	if (method != 0 || (flags & 8) || compressed != size)
 		return unpack_failed(unpack, "The release's %s is packed in a way the console cannot unpack.", unpack->name);
-	wanted_path(which, path, sizeof(path));
-	strcat(path, ".new");
+	if (which == MENU_FILE)
+	{
+		if (!menu_entry_path(unpack->name, path, sizeof(path)))
+			return unpack_failed(unpack, "Cannot make a folder for %s on the card.", unpack->name);
+	}
+	else
+	{
+		wanted_path(which, path, sizeof(path));
+		strcat(path, ".new");
+	}
 	unpack->file = fopen(path, "wb");
 	if (!unpack->file)
 		return unpack_failed(unpack, "Cannot write %s to the card.", path);
@@ -324,7 +430,8 @@ static int unpack_finish_entry(struct unpack *unpack)
 	unpack->file = NULL;
 	if (unpack->crc != unpack->expected_crc)
 		return unpack_failed(unpack, "%s did not arrive intact.", unpack->name);
-	unpack->written[unpack->which] = 1;
+	if (unpack->which < WANTED_FILES)
+		unpack->written[unpack->which] = 1;
 	return 1;
 }
 
@@ -499,6 +606,23 @@ void host_update_finish(void)
 		else
 			host_logf(HOST_LOG_ERROR, "update: cannot put %s in place; it is still %s", target, temporary);
 	}
+	/* the new image's menu files with it: the old folder goes whole, so a
+	file the release no longer has does not stay to replace an embedded menu */
+	{
+		char target[512], temporary[520];
+		struct stat info;
+
+		snprintf(temporary, sizeof(temporary), "%s/%s", host_executable_root(), UPDATE_MENUS_NEW);
+		if (stat(temporary, &info) == 0 && S_ISDIR(info.st_mode))
+		{
+			snprintf(target, sizeof(target), "%s/%s", host_executable_root(), UPDATE_MENUS);
+			remove_tree(target);
+			if (rename(temporary, target) == 0)
+				host_logf(HOST_LOG_INFO, "update: the new %s are in place", target);
+			else
+				host_logf(HOST_LOG_ERROR, "update: cannot put %s in place; they are still %s", target, temporary);
+		}
+	}
 }
 
 static void remove_partial_files(void)
@@ -512,6 +636,12 @@ static void remove_partial_files(void)
 		wanted_path(which, target, sizeof(target));
 		snprintf(temporary, sizeof(temporary), "%s.new", target);
 		remove(temporary);
+	}
+	{
+		char temporary[520];
+
+		snprintf(temporary, sizeof(temporary), "%s/%s", host_executable_root(), UPDATE_MENUS_NEW);
+		remove_tree(temporary);
 	}
 }
 

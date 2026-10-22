@@ -93,6 +93,25 @@ while it runs. `tools/switch_package.py` lays the two out with your maps for
 the card, and `tools/switch_deploy.py` sends them to a console running the
 Homebrew Menu's FTP server.
 
+### Releases and updates
+
+A release is made by pushing a tag `v<number>` on a commit of main
+(`git tag v1 && git push origin v1`): `.github/workflows/release.yml` builds
+the port in devkitPro's image, in both flavours, and publishes the GitHub
+release `build-<number>`, marked latest, with `halo-switch-release.zip` and
+`halo-switch-debug.zip`: the card's folder as `tools/switch_package.py` lays
+it out (the program, the game, `brokers.txt` and `menus/`), stored rather
+than deflated. A build with a number asks GitHub for the latest release
+before the game starts and offers it (`port/switch/host/host_update.c`): the
+program is replaced at once, the game image and the menu files at the next
+start. Builds made by hand have no number and never look, and
+`update.auto = false` in config.toml turns the look off. A release's number
+has to be higher than the last one's, which the installed builds compare
+theirs with.
+
+The shared shader keys (`keys.dkk` and `keys.sha1` at the root of main) come
+the same way when the repository has them; this one does not yet.
+
 The game's own view of the console is that of a 1280x720 handheld or a
 1920x1080 docked display; `SDL_GetDesktopDisplayMode` reports which, and the
 game is told the width to render at. It resizes on its own if the console is

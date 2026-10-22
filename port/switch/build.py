@@ -52,9 +52,11 @@ from tools.android_build import (ANDROID_API, EXPAT_SOURCES, GUEST_ABI_FLAGS, GU
                                  _find_ndk, ndk_toolchain)
 from tools.console_build import ConsolePort, console_defines
 from tools.embed_assets import FONT_LIST, PROMPT_ICONS, UI_FONT_FILES, hud_asset_inputs, hud_configure_inputs
-from tools.linux_build import (CUSTOM_EDITION_DEFINES, LINUX_PROFILE, MINIUPNPC_DEFINES, XDK_INCLUDE, compile_launcher,
-                               game_browser_defines, pgo_mode, pgo_profile, profile_use_flags)
+from tools.linux_build import (compile_launcher, CUSTOM_EDITION_DEFINES, game_browser_defines, LINUX_PROFILE,
+                                MINIUPNPC_DEFINES, pgo_mode, pgo_profile, profile_use_flags, updater_defines,
+                                XDK_INCLUDE)
 from tools.ninja_syntax import Writer
+from tools.version import VERSION_SOURCES, commit_inputs
 
 # devkitPro's static graphics and window libraries. Mesa is static (the
 # switch-mesa package ships libEGL.a and libGLESv2.a), so there is no
@@ -137,7 +139,9 @@ def configure_inputs(port: ConsolePort) -> List[Path]:
     return [port.path("host"), port.path("guest"), port.path("host_imports.list"), port.path("uam.patch"),
             game / "port" / "android" / "guest" / "runtime", game / "port" / "android" / "host_imports.list",
             game / "port" / "linux" / "src", game / "port" / "linux" / "port.json",
-            *(game / path for path in hud_configure_inputs())]
+            *(game / path for path in hud_configure_inputs()),
+            # (the game's commit, recorded in the guest's identity: tools/version.py)
+            *commit_inputs()]
 
 
 # ---------- the downloads: musl and SDL3 (the Android build's, pinned the same), and UAM
@@ -301,6 +305,18 @@ def _uam_build(n: Writer, build: Path, uam_dir: Path, patch: Path, devkitpro: Pa
 
 
 # ---------- the build
+
+def switch_updater_defines(release: bool) -> str:
+    """the self-updater's build (port/switch/host/host_update.c): its number,
+    from HALO_BUILD_NUMBER (.github/workflows/release.yml gives it for a
+    release tag's builds; none elsewhere, which never look for updates), and
+    its flavour, which names the release's archive (halo-switch-<flavour>.zip)"""
+    number = os.environ.get("HALO_BUILD_NUMBER", "0")
+    if not number.isdigit():
+        number = "0"
+    flavor = "release" if release else "debug"
+    return f'-DHALO_BUILD_NUMBER={int(number)} -DHALO_BUILD_FLAVOR=\\"{flavor}\\"'
+
 
 def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     game = port.game
@@ -671,6 +687,12 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             continue
         if source.name.startswith("posix_") or source.name in GUEST_HOST_ONLY or source.name in OPENGL_ONLY:
             continue
+        if source.name in VERSION_SOURCES:
+            # (the game's version, channel and commit, as Android's guest has
+            # them: tools/version.py; the main menu's version line and the logs)
+            objects.append(guest_object(source, f"{platform_cflags} "
+                                                f"{updater_defines(getattr(sln, 'port_release', False))}"))
+            continue
         objects.append(guest_object(source, platform_cflags))
     for source in embedded_sources:
         objects.append(guest_object(source, platform_cflags))
@@ -826,6 +848,10 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     for source in host_sources:
         obj = host_obj_dir / (source.name + ".o")
         cflags = host_cflags
+        # the self-updater knows its build number and flavour, and only it, so
+        # a new number rebuilds one file (host_update.c)
+        if source.name == "host_update.c":
+            cflags = f"{host_cflags} {switch_updater_defines(getattr(sln, 'port_release', False))}"
         # the shader cache names its folder for the compiler whose DKSH files
         # it keeps, so a new UAM does not read an old compiler's
         if source.name == "host_dk_shaders.c":
