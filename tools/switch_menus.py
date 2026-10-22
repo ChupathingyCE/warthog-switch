@@ -68,10 +68,12 @@ ANDROID_ROWS_KEPT = {"display.interpolation"}
 # rows for every platform the Switch leaves out: the menus stay the
 # Chupathingy ones
 ROWS_LEFT_OUT = {"display.menus"}
-# the main menu's way to the quit screen: the row, and B's and Back's
-QUIT_LINES = ('<on event="back" open="chupathingy/quit_screen"/>',
-              '<on event="b" open="chupathingy/quit_screen"/>',
-              '<child widget="chupathingy/main_menu_quit"')
+# the main menu's way to the quit screen: the row, taken out, and B's and
+# Back's, made to do nothing (with no handler B's default is back, which
+# closes the main menu itself)
+QUIT_ROW = '<child widget="chupathingy/main_menu_quit"'
+QUIT_HANDLERS = {'<on event="back" open="chupathingy/quit_screen"/>': '<on event="back" run="NULL"/>',
+                 '<on event="b" open="chupathingy/quit_screen"/>': '<on event="b" run="NULL"/>'}
 
 
 def switch_rows(rows: list) -> list:
@@ -103,9 +105,18 @@ def switch_spec(spec: dict, extra_rows: list) -> dict:
 def main_menu_lines() -> list:
     """the game's main menu without QUIT"""
     lines = (MENUS / MAIN_MENU).read_text().split("\n")
-    kept = [line for line in lines if not any(text in line for text in QUIT_LINES)]
-    if len(kept) != len(lines) - len(QUIT_LINES):
-        raise SystemExit(f"{MAIN_MENU}: expected the quit row and its two handlers, found {len(lines) - len(kept)}")
+    kept, changed = [], 0
+    for line in lines:
+        if QUIT_ROW in line:
+            changed += 1
+            continue
+        for old, new in QUIT_HANDLERS.items():
+            if old in line:
+                line = line.replace(old, new)
+                changed += 1
+        kept.append(line)
+    if changed != 1 + len(QUIT_HANDLERS):
+        raise SystemExit(f"{MAIN_MENU}: expected the quit row and its two handlers, found {changed}")
     return kept
 
 
