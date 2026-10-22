@@ -1516,6 +1516,13 @@ unsigned int host_dk_gpu_frame_us(void)
 	return dk.gpu_average_us;
 }
 
+/* for the host's screens (host_sdl2.c's message boxes): once the swapchain
+is made the window is the game's */
+int host_dk_window_taken(void)
+{
+	return dk.swapchain != NULL;
+}
+
 /* the height host_dk_output_height last chose: 720 in handheld, 1080 docked */
 static uint32_t output_height = SCREEN_HEIGHT;
 

@@ -30,14 +30,18 @@ Android, each request goes to a thread that has one.
 
 #include "host.h"
 #include "host_switch.h"
+#include "host_ui.h"
 
 #include <SDL2/SDL.h>
+#include "tomlc17.h"
 #include <switch.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
+#include <sys/stat.h>
 
 #define HANDLE_COUNT 256
 
@@ -1439,22 +1443,112 @@ int host_sdl_show_toast(const char *message, int duration, int gravity, int x, i
 	return 1;
 }
 
-/* ---------- a message for the player: the log (the framebuffer has no
-message boxes) */
+/* ---------- a message for the player, and a question
+
+The game asks through SDL's message boxes (sdl_platform.c: the settings whose
+defaults changed, the older map folders, whether to send crash reports). On
+the console they go on the host's own screens (host_ui.c, the updater's)
+while the game's window is not yet open, which is where they are asked at
+start-up; the buttons are the pad's A, B, X and Y in the order given, and
+the answer is the chosen button's id. Once the deko3d swapchain holds the
+window the screens cannot be shown, and the question is logged with no
+answer (-1: the guest takes it as not able to ask). A simple message box
+is the same with one button. */
+
+/* ASCII uppercased, as the screens' titles are */
+static void title_copy(char *buffer, size_t size, const char *title)
+{
+	size_t index;
+
+	for (index = 0; index + 1 < size && title && title[index]; index++)
+		buffer[index] = title[index] >= 'a' && title[index] <= 'z' ? title[index] - 'a' + 'A' : title[index];
+	buffer[index] = 0;
+}
+
+/* -1 when the screens cannot be shown */
+static int ask_on_screen(const char *title, const char *message, int count, const char *const *labels)
+{
+	static const char *const keys[4] = { "A", "B", "X", "Y" };
+	static const u64 buttons[4] = { HidNpadButton_A, HidNpadButton_B, HidNpadButton_X, HidNpadButton_Y };
+	const char *prompt[9];
+	char heading[128];
+	PadState pad;
+	int index;
+
+	if (count < 1 || count > 4 || host_dk_window_taken() || !host_ui_open())
+		return -1;
+	for (index = 0; index < count; index++)
+	{
+		prompt[2 * index] = keys[index];
+		prompt[2 * index + 1] = labels[index] ? labels[index] : "";
+	}
+	prompt[2 * count] = NULL;
+	title_copy(heading, sizeof(heading), title);
+	host_ui_message(heading, message ? message : "", prompt);
+	padInitializeDefault(&pad);
+	for (;;)
+	{
+		u64 down;
+
+		if (!appletMainLoop())
+		{
+			host_ui_close();
+			host_exit(0);
+		}
+		padUpdate(&pad);
+		down = padGetButtonsDown(&pad);
+		for (index = 0; index < count; index++)
+		{
+			if (down & buttons[index])
+			{
+				/* (the window goes back to the game) */
+				host_ui_close();
+				return index;
+			}
+		}
+		svcSleepThread(16666667);
+	}
+}
 
 int host_sdl_show_simple_message_box(uint32_t flags, const char *title, const char *message)
 {
+	static const char *const labels[1] = { "Continue" };
+
 	(void)flags;
 	host_logf(HOST_LOG_WARN, "%s: %s", title, message);
+	ask_on_screen(title, message, 1, labels);
 	return 1;
 }
 
-/* a question (the mods at startup: port_mods.c): the log, and no answer,
-which the guest takes as not able to ask */
-int host_sdl_show_message_box(struct host_message_box *box)
+/* the texts are guest addresses, as the Android host takes them */
+int host_sdl_show_message_box(uint32_t flags, const char *title, const char *message, int count,
+	const uint32_t *button_flags, const int32_t *button_ids, const uint32_t *button_texts)
 {
-	host_logf(HOST_LOG_WARN, "%s: %s", (const char *)(uintptr_t)box->title, (const char *)(uintptr_t)box->message);
-	return 0;
+	const char *labels[4];
+	char choices[256];
+	int index, chosen;
+
+	(void)flags;
+	(void)button_flags;
+	if (count < 1 || count > 4)
+		return -1;
+	choices[0] = 0;
+	for (index = 0; index < count; index++)
+	{
+		size_t used = strlen(choices);
+
+		labels[index] = (const char *)(uintptr_t)button_texts[index];
+		snprintf(choices + used, sizeof(choices) - used, "%s[%s]", index ? " " : "", labels[index]);
+	}
+	host_logf(HOST_LOG_WARN, "%s: %s %s", title, message, choices);
+	chosen = ask_on_screen(title, message, count, labels);
+	if (chosen < 0)
+	{
+		host_logf(HOST_LOG_WARN, "the question could not be asked on the screen (the game's window is open)");
+		return -1;
+	}
+	host_logf(HOST_LOG_INFO, "the player chose [%s]", labels[chosen]);
+	return button_ids[chosen];
 }
 
 /* ---------- Android's on-screen touch controls (port/android/host/host_touch.c)

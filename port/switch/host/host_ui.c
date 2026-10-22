@@ -336,8 +336,10 @@ static float draw_text(const struct font *font, float x, int y, const char *text
 	return x - start;
 }
 
-/* text broken into lines of at most width; returns the next line's top */
-static int draw_wrapped(const struct font *font, int x, int y, int width, int line, const char *text, uint32_t colour)
+/* one paragraph (no newlines) broken into lines of at most width; returns
+the next line's top */
+static int draw_paragraph(const struct font *font, int x, int y, int width, int line, const char *text,
+	uint32_t colour)
 {
 	char buffer[512];
 	const char *cursor = text;
@@ -373,6 +375,36 @@ static int draw_wrapped(const struct font *font, int x, int y, int width, int li
 		cursor += fits;
 		while (*cursor == ' ')
 			cursor++;
+	}
+	return y;
+}
+
+/* text broken into lines of at most width, a newline ending a line and an
+empty line leaving half a line's gap (the game's messages, host_sdl2.c);
+returns the next line's top */
+static int draw_wrapped(const struct font *font, int x, int y, int width, int line, const char *text, uint32_t colour)
+{
+	const char *cursor = text;
+
+	while (*cursor)
+	{
+		const char *end = strchr(cursor, '\n');
+		size_t length = end ? (size_t)(end - cursor) : strlen(cursor);
+		char paragraph[1024];
+
+		if (!length)
+		{
+			y += line / 2;
+		}
+		else
+		{
+			if (length > sizeof(paragraph) - 1)
+				length = sizeof(paragraph) - 1;
+			memcpy(paragraph, cursor, length);
+			paragraph[length] = 0;
+			y = draw_paragraph(font, x, y, width, line, paragraph, colour);
+		}
+		cursor = end ? end + 1 : cursor + strlen(cursor);
 	}
 	return y;
 }

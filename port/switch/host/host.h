@@ -54,6 +54,9 @@ void host_storage_commit(void);
 void host_clock_cpu(unsigned int mhz);
 /* the height presented at: 1080 docked, 720 in handheld (host_dk.c) */
 unsigned int host_dk_output_height(void);
+/* whether the deko3d swapchain holds the console's window, after which the
+host's own screens (host_ui.c) cannot be shown (host_dk.c) */
+int host_dk_window_taken(void);
 /* the GPU's time on a frame, averaged over the last 16 or so, in
 microseconds (display.dynamic_resolution: d3d8_dk.c) */
 unsigned int host_dk_gpu_frame_us(void);
@@ -426,28 +429,8 @@ void *host_resolve_import(const char *name);
 
 /* ---------- SDL / GL (host_sdl.c, host_gl.c) */
 
-/* SDL_ShowMessageBox's question and the player's answer (the guest's
-struct message_box, port/android/guest/runtime/guest_sdl.c): 32-bit members
-only, and one pointer to it, so that every argument of the call has a
-register on x86-64 (tools/check_host_imports.py); title, message and
-button_texts are guest addresses, the texts one after another, each NUL
-terminated, in button_texts_size bytes */
-#define HOST_MESSAGE_BOX_BUTTONS 8
-
-struct host_message_box
-{
-	uint32_t flags;
-	uint32_t title;
-	uint32_t message;
-	int32_t button_count;
-	int32_t button_flags[HOST_MESSAGE_BOX_BUTTONS];
-	int32_t button_ids[HOST_MESSAGE_BOX_BUTTONS];
-	uint32_t button_texts;
-	uint32_t button_texts_size;
-	int32_t chosen;
-};
-
-typedef char host_message_box_size_check[sizeof(struct host_message_box) == 92 ? 1 : -1];
+/* (SDL_ShowMessageBox and SDL_ShowSimpleMessageBox are host_sdl2.c's, with
+the guest's prototypes: port/android/guest/runtime/guest_host.h) */
 
 void *host_gl_resolve(const char *name);
 
