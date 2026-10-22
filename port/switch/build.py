@@ -841,8 +841,11 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     # the same file), which the library's own platform sources know nothing of
     browser_sources = [LINUX_DIR / "src" / "posix_browser.c", *sorted((MBEDTLS_DIR / "library").glob("*.c"))]
     host_sources += browser_sources
-    browser_cflags = " ".join([host_cflags, *game_browser_defines(sln), f"-I{MBEDTLS_DIR / 'include'}",
-                               f"-I{MBEDTLS_DIR / 'library'}", "-D__unix__=1", "-DMBEDTLS_NO_PLATFORM_ENTROPY",
+    # (the bundled Mbed TLS's headers before the host's include paths: the
+    # devkitPro image's portlibs carry an older Mbed TLS of their own, which
+    # has no mbedtls_ms_time_t, and -I directories are searched in order)
+    browser_cflags = " ".join([f"-I{MBEDTLS_DIR / 'include'}", f"-I{MBEDTLS_DIR / 'library'}", host_cflags,
+                               *game_browser_defines(sln), "-D__unix__=1", "-DMBEDTLS_NO_PLATFORM_ENTROPY",
                                "-DMBEDTLS_ENTROPY_HARDWARE_ALT", "-DMBEDTLS_PLATFORM_MS_TIME_ALT"])
     host_objects: List[Path] = []
     for source in host_sources:
@@ -870,7 +873,8 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
         if source.name == "posix_browser.c":
             cflags += " -D__ANDROID__=1"
         if source.name == "host_tls.c":
-            cflags = " ".join([host_cflags, f"-I{MBEDTLS_DIR / 'include'}", "-DMBEDTLS_ENTROPY_HARDWARE_ALT",
+            # (the bundled headers first, as above)
+            cflags = " ".join([f"-I{MBEDTLS_DIR / 'include'}", host_cflags, "-DMBEDTLS_ENTROPY_HARDWARE_ALT",
                                "-DMBEDTLS_PLATFORM_MS_TIME_ALT"])
         n.build(outputs=obj, rule="switch_host_cc", inputs=source, variables={"cflags": cflags},
                 implicit=[syscall_h])
