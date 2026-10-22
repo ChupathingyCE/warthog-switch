@@ -141,25 +141,26 @@ while you wait in the lobby. Refer to the root
 
 ## Gyro aiming
 
-The stick aims as it does anywhere else. With `input.gyro_aim = "true"` in
-`config.toml`, the first player's controller gyroscope turns the view too.
-`input.gyro_sensitivity_horizontal` and `input.gyro_sensitivity_vertical`
-are how far the view turns each way (`1` is the sensor's own turn), and
-`input.gyro_invert_horizontal` and `input.gyro_invert_vertical` are separate
-inverts, neither following the stick's Invert Look. The host reads these five
-itself (`host_sdl2.c`, `host_touch_look_read`), and reads them again when the
-file changes, so the game need not know them; the game logs each as an
-unknown setting when it starts, which is expected.
+The stick aims as it does anywhere else. Open a profile, choose Controls
+Setup, set DEVICE to GAMEPAD and SHOW to GYRO. Gyro Aim is off until it is
+set to ON, which aims with the gyroscope all the time, or ONLY ON ZOOM,
+which aims with it only while you are zoomed in (a scope), for fine aiming;
+the stick aims the rest of the time. Horizontal and vertical sensitivity are
+how far the view turns each way (`1` is the sensor's own turn; the page goes
+from `0.25` to `10`). Invert horizontal and invert vertical are separate, and
+neither follows the stick's Invert Look. The same five are `input.gyro_aim`,
+`input.gyro_sensitivity_horizontal`, `input.gyro_sensitivity_vertical`,
+`input.gyro_invert_horizontal` and `input.gyro_invert_vertical` in
+`config.toml`. Each local player reads their own controller. A Pro
+Controller, the console held in the hands, and a single Joy-Con each use
+their one sensor; when two Joy-Con are attached, the right one is read. It
+is not used in the menus.
 
-The turn reaches the game through the path its Android touch controls use
-for a swipe, scaled as the mouse's is and scaled down while zoomed in. Two
-things that path cannot carry: a second to fourth player's turn (only the
-first pad aims), and `"zoom"` (aiming with the gyroscope only while zoomed
-in), which needs the game's zoom state and aims at all times here. Both
-would take a hook in the game's `player_control.c`, which the port keeps out
-of the shared code for now. A Pro Controller, the console held in the hands,
-and a single Joy-Con each use their one sensor; when two Joy-Con are
-attached, the right one is read. It is not used in the menus.
+The host reads the sensor (`host_sdl2.c`, `host_sdl_gamepad_gyro`) and the
+game's input layer applies the turn (its `xinput_sdl.c` and
+`player_control.c`, behind the Switch define in the `chupathingyce/`
+submodule as this port pins it); the GYRO page is the port's own menu file
+(`tools/switch_menus.py`).
 
 In a split-screen match on this console alone, the pause menu's LEAVE GAME
 leaves the match for both players and returns to the main menu. Each

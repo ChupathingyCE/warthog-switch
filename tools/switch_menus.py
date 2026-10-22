@@ -24,6 +24,12 @@ generator (chupathingyce/tools/port_settings.py) and its rows:
   (ce/...video_settings.xml) is written too, for the three rows' widgets.
 - The main menu (chupathingy/main_menu.xml): no QUIT, and B does not offer
   to quit: the console's HOME button is the way out.
+- Controls Setup's controller gets a third page under SHOW, GYRO (the game's
+  menu_functions.c knows the page on the Switch): gyro aim always, only on
+  zoom or off, its two sensitivities and two inverts (input.gyro_*, which the
+  game declares for the Switch; port/linux/src/xinput_sdl.c reads them). The
+  pages place rows whose widgets the PC version's Controls Setup file
+  defines, so that file (ce/...controls_setup.xml) is written too.
 
 The most players a game hosted here may have is 48 (port/linux/game/
 menu_functions.c's HOSTED_PLAYERS_LIMIT, behind HALO_SWITCH_CONSOLE), which
@@ -46,6 +52,8 @@ sys.path.insert(0, str(GAME / "tools"))
 import port_settings  # noqa: E402
 
 MAIN_MENU = "chupathingy/main_menu.xml"
+CONTROLS_NAME = f"{port_settings.PE}/{port_settings.CONTROLS_SCREEN}".replace("/", ".") + ".xml"
+CONTROLS = f"ce/{CONTROLS_NAME}"
 SETTINGS_PAGES = "chupathingy/settings_pages.xml"
 VIDEO_NAME = f"{port_settings.PE}/video_settings".replace("/", ".") + ".xml"
 VIDEO = f"ce/{VIDEO_NAME}"
@@ -61,6 +69,21 @@ SWITCH_VIDEO_ROWS = [
      "Draw one step lower while the frame rate would\nfall under 55, and back up once it fits again.", None),
     ("CPU CLOCK:", "performance.cpu_clock", [("STOCK", "stock"), ("1 GHZ", "1020"), ("1.7 GHZ", "1785")],
      "1.7 GHz is the fastest Nintendo's games use.\n1 GHz and stock run cooler, and the battery lasts.", None),
+]
+# the controller's gyro page: its rows (the reference's Gyro Aim screen)
+GYRO_SENSITIVITIES = [(f"{value:g}", f"{value:g}") for value in
+                      (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 9, 10)]
+GYRO_ROWS = [
+    ("GYRO AIM:", "input.gyro_aim", port_settings.ON_OFF + [("ONLY ON ZOOM", "zoom")],
+     "Turn the view with the gyroscope,\nalways, or only while zoomed in.", None),
+    ("HORIZONTAL SENSITIVITY:", "input.gyro_sensitivity_horizontal", GYRO_SENSITIVITIES,
+     "How far the view turns left and right.\n1 is the sensor's own turn.", None),
+    ("VERTICAL SENSITIVITY:", "input.gyro_sensitivity_vertical", GYRO_SENSITIVITIES,
+     "How far the view turns up and down.\n1 is the sensor's own turn.", None),
+    ("INVERT HORIZONTAL:", "input.gyro_invert_horizontal", port_settings.YES_NO,
+     "Turning it right looks left.", None),
+    ("INVERT VERTICAL:", "input.gyro_invert_vertical", port_settings.YES_NO,
+     "Tilting it up looks down.", None),
 ]
 # the Android rows the Switch has too (its game is built as Android's): the
 # rest of Android's are its own (its anti-aliasing is the OpenGL renderer's)
@@ -120,14 +143,49 @@ def main_menu_lines() -> list:
     return kept
 
 
+def controls_rows_with_gyro(original):
+    """Controls Setup's rows and widgets with the controller's GYRO page: a
+    third choice of SHOW, a mark of its own after the buttons', and the gyro
+    rows after it (their labels and helps added to the screen's strings).
+    The SHOW chooser's row, marked for the settings and buttons pages, is
+    marked for the gyro page too."""
+    def rows_and_extra():
+        base = f"{port_settings.PE}/{port_settings.CONTROLS_SCREEN}"
+        rows, extra = original()
+        first_label = len(port_settings.MOUSE_ROWS) + len(port_settings.GAMEPAD_ROWS)
+        rows = [(row.replace("view_gamepad_buttons", "view_gamepad_buttons_gyro"), platform, place)
+                for row, platform, place in rows]
+        extra = [line.replace("view_gamepad_buttons", "view_gamepad_buttons_gyro") for line in extra]
+        rows.append((f"{base}/view_gyro", None, 0))
+        added = port_settings._mark(base, "gyro")
+        for place, row in enumerate(GYRO_ROWS, 2):
+            key = port_settings._row_key(row)
+            rows.append((f"{base}/op_{key}", None, place))
+            added += port_settings._setting_row(base, row, key, first_label + place - 2)
+        # (the strings close the widgets: the rows go before them, the
+        # labels and helps into them)
+        labels_at = next(index for index, line in enumerate(extra) if line == f'\t<strings name="{base}/labels">')
+        extra = extra[:labels_at] + added + extra[labels_at:]
+        for name, texts in (("labels", [label for label, *_ in GYRO_ROWS]),
+                            ("help_strings", [row[3].replace("\n", "\\n") for row in GYRO_ROWS])):
+            start = extra.index(f'\t<strings name="{base}/{name}">')
+            end = extra.index("\t</strings>", start)
+            extra[end:end] = [f"\t\t<string{port_settings.attributes([('text', text)])}/>" for text in texts]
+        return rows, extra
+    return rows_and_extra
+
+
 def files() -> dict:
     """the files, by their paths below the menus folder"""
+    port_settings.CONTROLLER_PAGES = [*port_settings.CONTROLLER_PAGES, "GYRO"]
+    port_settings._controls_rows = controls_rows_with_gyro(port_settings._controls_rows)
     for folder, spec in port_settings.SCREENS.items():
         port_settings.SCREENS[folder] = switch_spec(spec, SWITCH_VIDEO_ROWS if folder == "video_settings" else [])
     return {
         SETTINGS_PAGES: port_settings.chupathingy_settings_pages(),
         MAIN_MENU: main_menu_lines(),
         VIDEO: port_settings.settings_files()[VIDEO_NAME],
+        CONTROLS: port_settings.settings_files()[CONTROLS_NAME],
     }
 
 
