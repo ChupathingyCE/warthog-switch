@@ -1038,6 +1038,21 @@ static void *game_main(void *unused)
 	}
 	free(image);
 
+	/* the game list's HTTPS (posix_browser.c, in this host with Mbed TLS):
+	the certificate authorities it trusts are a PEM bundle beside config.toml,
+	since the console keeps none where the library looks; the library reads
+	SSL_CERT_FILE */
+	snprintf(path, sizeof(path), "%s/cacert.pem", data_root);
+	if (access(path, R_OK) == 0)
+	{
+		setenv("SSL_CERT_FILE", path, 1);
+		host_logf(HOST_LOG_INFO, "game list: the certificate authorities are %s", path);
+	}
+	else
+	{
+		host_logf(HOST_LOG_WARN, "game list: no %s: an HTTPS game list cannot be reached (put a PEM bundle of "
+			"certificate authorities there)", path);
+	}
 	snprintf(path, sizeof(path), "%s/config.toml", data_root);
 	{
 		char seconds[32];

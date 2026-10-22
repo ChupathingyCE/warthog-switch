@@ -273,6 +273,29 @@ linked because SDL2 needs it.
 
 ## Internet play
 
+The game's online screens (the Multiplayer menu's ONLINE GAMES, the
+Controls screen, the Link Profile panel, the invite prompt) are drawn by its
+overlay, `port/linux/src/ui_overlay.c`, with OpenGL calls, which this
+console's deko3d-only renderer cannot run. `port/switch/guest/ui_overlay_dk.c`
+is that file with its OpenGL part replaced: the same gathering line for
+line, the atlas, icons and picture as images of the renderer's texture
+cache, the overlay's two shaders compiled by the host's shader service from
+the OpenGL renderer's program in UAM's dialect (a few frames the first time,
+then from the card's shader cache), and the gathered vertices drawn over the
+back buffer at Present through the device's own commands (`dk_overlay_draw`
+in `d3d8_dk.c`). The game's file is left out of the Switch guest; a change
+to the gathering there is a change to copy here.
+
+The game list's requests are the game's own `posix_browser.c` with its
+Mbed TLS, built into the host as the Android app builds them (`build.py`,
+`host_tls.c`: the library is told it is on a Unix, its entropy is the
+console's random service and its millisecond clock the console's). The
+library trusts certificate authorities from a PEM bundle it is given, since
+the console keeps none where it looks: put one beside `config.toml` as
+`cacert.pem` (Mozilla's, or your system's `ca-certificates.crt`) and the host
+points the library at it; without one an HTTPS game list cannot be reached,
+and the log says so at start.
+
 `host_net.c` gives the game libnx's BSD sockets, through the same
 translation to Winsock that `posix_net.c` does on the other builds, so
 system link and internet play work as on Android. The desktop-only parts of

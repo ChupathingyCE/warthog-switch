@@ -317,6 +317,7 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     MUSL_MATH_DIR = THIRD_DIR / "musl-math"
     STB_DIR = THIRD_DIR / "stb"
     MINIUPNPC_DIR = THIRD_DIR / "miniupnpc"
+    MBEDTLS_DIR = THIRD_DIR / "mbedtls"
     GAME_TOOLS = game / "tools"
     BUILD: Path = sln.build_dir / "switch"
     THIRD_PARTY = BUILD / "third_party"
@@ -490,8 +491,8 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             implicit=[GAME_TOOLS / "android_gl_stubs.py", LINUX_DIR / "src" / "gl.h"])
 
     # posix.h's helpers and the game list's (browser_http.h), as the Android
-    # guest has them; the host answers the game list's with a failure
-    # (host_browser.c) until it has the game list
+    # guest has them; the host answers the game list's with the game's own
+    # posix_browser.c and Mbed TLS (below, the host)
     guest_posix_c = gen_dir / "guest_posix.c"
     posix_imports = gen_dir / "posix_imports.list"
     n.rule(
@@ -809,6 +810,18 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
                             "-Dif_nametoindex=switch_upnp_if_nametoindex",
                             "-Dif_indextoname=switch_upnp_if_indextoname",
                             f"-include {PORT_DIR / 'host' / 'host_upnp_names.h'}"])
+    # the game list's requests: the game's own posix_browser.c with its
+    # Mbed TLS, in the host as the Android app has them (tools/android_build.py).
+    # The console's C library claims no Unix, so the library is told it is
+    # one (its sockets, files and time are libnx's POSIX ones); its entropy
+    # is the console's random service (host_tls.c's mbedtls_hardware_poll),
+    # and its millisecond clock the console's monotonic one (mbedtls_ms_time,
+    # the same file), which the library's own platform sources know nothing of
+    browser_sources = [LINUX_DIR / "src" / "posix_browser.c", *sorted((MBEDTLS_DIR / "library").glob("*.c"))]
+    host_sources += browser_sources
+    browser_cflags = " ".join([host_cflags, *game_browser_defines(sln), f"-I{MBEDTLS_DIR / 'include'}",
+                               f"-I{MBEDTLS_DIR / 'library'}", "-D__unix__=1", "-DMBEDTLS_NO_PLATFORM_ENTROPY",
+                               "-DMBEDTLS_ENTROPY_HARDWARE_ALT", "-DMBEDTLS_PLATFORM_MS_TIME_ALT"])
     host_objects: List[Path] = []
     for source in host_sources:
         obj = host_obj_dir / (source.name + ".o")
@@ -823,6 +836,11 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             cflags = upnp_cflags + (" -w" if source.name != "posix_upnp.c" else "")
         if source.name == "host_dk_hud.c":
             cflags = f"{host_cflags} -I{ZLIB_DIR}"
+        if source in browser_sources:
+            cflags = browser_cflags + (" -w" if source.name != "posix_browser.c" else "")
+        if source.name == "host_tls.c":
+            cflags = " ".join([host_cflags, f"-I{MBEDTLS_DIR / 'include'}", "-DMBEDTLS_ENTROPY_HARDWARE_ALT",
+                               "-DMBEDTLS_PLATFORM_MS_TIME_ALT"])
         n.build(outputs=obj, rule="switch_host_cc", inputs=source, variables={"cflags": cflags},
                 implicit=[syscall_h])
         host_objects.append(obj)
