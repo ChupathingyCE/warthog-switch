@@ -952,5 +952,20 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     )
     n.build(outputs=nro, rule="switch_nro", inputs=[elf, nacp, nro_icon])
 
-    n.build(outputs="switch", rule="phony", inputs=[nro, image])
+    # The Switch's own menu files (tools/switch_menus.py), for the card's
+    # menus folder beside the program: the packager and the deploy tool
+    # carry them, and the game takes them over its built-in ones.
+    menus_dir = Path(nro).parent / "menus"
+    menus_stamp = menus_dir / ".written"
+    n.rule(
+        name="switch_menus",
+        command=f"{python} {_quote(TOOLS_DIR / 'switch_menus.py')} --out {_quote(menus_dir)} --stamp $out",
+        description="SWITCH MENUS $out",
+    )
+    n.build(outputs=menus_stamp, rule="switch_menus",
+            implicit=[TOOLS_DIR / "switch_menus.py", GAME_TOOLS / "port_settings.py",
+                      game / "port" / "assets" / "menus" / "ce" / "main_menu.xml",
+                      game / "port" / "assets" / "menus" / "menus.json"])
+
+    n.build(outputs="switch", rule="phony", inputs=[nro, image, menus_stamp])
     n.newline()

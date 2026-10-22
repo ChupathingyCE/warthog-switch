@@ -141,48 +141,61 @@ while you wait in the lobby. Refer to the root
 
 ## Gyro aiming
 
-Not in this build yet: the half of it in the game's input layer (reading the
-controller's gyroscope for the look) is a change to the shared code, which
-goes to the game as its own pull request; the host's side (`host_sdl2.c`,
-`host_sdl_gamepad_gyro`) is here. What follows is how it works once both
-are in.
+The stick aims as it does anywhere else. With `input.gyro_aim = "true"` in
+`config.toml`, the first player's controller gyroscope turns the view too.
+`input.gyro_sensitivity_horizontal` and `input.gyro_sensitivity_vertical`
+are how far the view turns each way (`1` is the sensor's own turn), and
+`input.gyro_invert_horizontal` and `input.gyro_invert_vertical` are separate
+inverts, neither following the stick's Invert Look. The host reads these five
+itself (`host_sdl2.c`, `host_touch_look_read`), and reads them again when the
+file changes, so the game need not know them; the game logs each as an
+unknown setting when it starts, which is expected.
 
-The stick aims as it does anywhere else. Open a profile, choose Gamepads, and
-then Gyro Aim. That screen is the Switch's only. Gyro Aim is off until it is
-set to ON, which aims with the gyroscope all the time, or ONLY ON ZOOM, which
-aims with it only while you are zoomed in (a scope), for fine aiming; the
-stick aims the rest of the time. Horizontal and vertical sensitivity are how far the view turns
-each way (`1` is the sensor's own turn; the screen goes from `0.25` to `10`).
-Invert horizontal and invert vertical are separate, and neither follows the
-stick's Invert Look. The same five are `input.gyro_aim`,
-`input.gyro_sensitivity_horizontal`, `input.gyro_sensitivity_vertical`,
-`input.gyro_invert_horizontal` and `input.gyro_invert_vertical` in
-`config.toml`. Each local player reads their own controller. A Pro Controller,
-the console held in the hands, and a single Joy-Con each use their one sensor;
-when two Joy-Con are attached, the right one is read. It is not used in the
-menus. In a split-screen match on this console alone, the pause menu's LEAVE
-GAME leaves the match for both players and returns to the main menu. Each
+The turn reaches the game through the path its Android touch controls use
+for a swipe, scaled as the mouse's is and scaled down while zoomed in. Two
+things that path cannot carry: a second to fourth player's turn (only the
+first pad aims), and `"zoom"` (aiming with the gyroscope only while zoomed
+in), which needs the game's zoom state and aims at all times here. Both
+would take a hook in the game's `player_control.c`, which the port keeps out
+of the shared code for now. A Pro Controller, the console held in the hands,
+and a single Joy-Con each use their one sensor; when two Joy-Con are
+attached, the right one is read. It is not used in the menus.
+
+In a split-screen match on this console alone, the pause menu's LEAVE GAME
+leaves the match for both players and returns to the main menu. Each
 player's window is cleared only inside itself, so the second player's clear
 does not wipe the first player's view.
 
 ## Performance
 
 The console shows the game at 1280x720 in handheld and 1920x1080 docked.
-`display.resolution_limit` in `config.toml` (`"480"`, `"720"` or `"1080"`)
-chooses the lines the game draws at, which are scaled up to that: 480, the
-game's own, 720 (the default) or 1080, no more than the console shows (1080
-draws at 720 in handheld). Docking or undocking switches at once.
-`display.dynamic_resolution` steps the lines down while the GPU falls
-behind. The Video Setup rows for these (RESOLUTION LIMIT, DYNAMIC
-RESOLUTION, and PERFORMANCE below) are a change to the game's menus, which
-goes to the game as its own pull request; until then the settings file is
-where they are set.
+`display.resolution_limit` in `config.toml` (`"480"`, `"720"`, `"900"` or
+`"1080"`) chooses the lines the game draws at, which are scaled up to that:
+480, the game's own, 720 (the default), 900 or 1080, no more than the
+console shows (1080 draws at 720 in handheld). Docking or undocking switches
+at once. `display.dynamic_resolution` steps the lines down while the GPU
+falls behind. Video Setup has rows for both (RESOLUTION LIMIT and DYNAMIC
+RESOLUTION) and for the CPU clock below: those rows are the Switch's own
+menu files (`tools/switch_menus.py`, written by `ninja switch` into
+`build/switch/menus` and put on the card as `menus/` by the packager and
+the deploy tool), which the game takes over its built-in ones; the files
+also take QUIT GAME off the main menu (HOME is the way out) and stop Create
+Game's most-players spinner at 48, the most a game hosted on the console
+was measured to hold.
 
 `performance.cpu_clock` in `config.toml` is the CPU's clock: `"1785"` (the
 default, 1.7 GHz, the fastest Nintendo's own games use), `"1020"` (the
 console's handheld rate: cooler, and the battery lasts longer) or `"stock"`
 (left at the rate the console started the game with). It changes at once. The memory and the GPU stay at the rates the game sets for
 itself, and every clock goes back to the console's when the game exits.
+
+`display.big_sprite_limit` (8 by default; the Xbox drew 11) is the most
+sprites covering more than half the view drawn in a frame: the Halo level's
+falls have 11 sheets of mist, 5.5 ms of a Switch Lite's GPU. The zoom's blur
+and a cutscene's are drawn on a small copy of the screen and blended over it
+once (`debug.original_zoom` and `debug.original_blur` draw them as the game
+does). Both are changes to the game's own code behind `HALO_SWITCH_CONSOLE`,
+in the `chupathingyce/` submodule as this port pins it.
 
 ## The memory model
 

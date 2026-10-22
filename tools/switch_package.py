@@ -4,9 +4,10 @@
     python3 tools/switch_package.py --maps /path/to/your/maps --out ~/Downloads/warthog-switch
 
 writes OUT/switch/ChupaThingyCE/ with the program (build/switch/halo.nro) and
-the game (build/switch/halo_guest.elf), from `ninja switch`; internet play's
-broker list (the game's port/assets/network/brokers.txt); and maps/ with the
-maps folder's *.map and loading.tga from your own copy of Halo. Copy the
+the game (build/switch/halo_guest.elf), from `ninja switch`; the Switch's own
+menu files (build/switch/menus, tools/switch_menus.py) as menus/; internet
+play's broker list (the game's port/assets/network/brokers.txt); and maps/
+with the maps folder's *.map and loading.tga from your own copy of Halo. Copy the
 `switch/` folder to the SD card's root (sd:/switch/ChupaThingyCE/).
 
 The maps are never part of the build or of a release: they come from a disc
@@ -23,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "build" / "switch"
 BROKERS = ROOT / "chupathingyce" / "port" / "assets" / "network" / "brokers.txt"
+MENUS = BUILD / "menus"
 # the folder on the card: HOST_ROOT in port/switch/host/host.h
 CARD_FOLDER = Path("switch") / "ChupaThingyCE"
 
@@ -63,11 +65,17 @@ def main() -> int:
     shutil.copy2(args.guest, app_dir / "halo_guest.elf")
     if BROKERS.is_file():
         shutil.copy2(BROKERS, app_dir / "brokers.txt")
+    menus = sorted(path for path in MENUS.rglob("*.xml")) if MENUS.is_dir() else []
+    for path in menus:
+        destination = app_dir / "menus" / path.relative_to(MENUS)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, destination)
     if maps:
         (app_dir / "maps").mkdir(exist_ok=True)
         for path in maps:
             place(path, app_dir / "maps" / path.name)
-    print(f"{app_dir}: halo.nro, halo_guest.elf" + (f" and {len(maps)} map files" if maps else " (no maps)"))
+    print(f"{app_dir}: halo.nro, halo_guest.elf, {len(menus)} menu files" +
+          (f" and {len(maps)} map files" if maps else " (no maps)"))
     return 0
 
 

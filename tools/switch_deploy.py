@@ -11,8 +11,9 @@ Usage: python3 tools/switch_deploy.py [--host 192.168.2.173] [--port 5000]
                                      [build/switch/halo.nro ...]
 
 With no files, it uploads what the port needs: the program, the guest
-image (halo_guest.elf, with the deko3d renderer) and internet play's
-brokers.txt, as a release carries it.
+image (halo_guest.elf, with the deko3d renderer), internet play's
+brokers.txt, and the Switch's own menu files (build/switch/menus,
+tools/switch_menus.py) into menus/, as a release carries them.
 The game's own data (maps/) is not touched - it is large, it does not change
 between builds, and it belongs to the player rather than to the build.
 """
@@ -87,9 +88,37 @@ def main() -> int:
         if actual != expected:
             print("warning: %s is %d bytes on the card, %d expected; the transfer was cut short"
                   % (path.name, actual, expected), file=sys.stderr)
+    if not args.files:
+        menus_upload(ftp, args.destination, Path("build/switch/menus"))
     ftp.quit()
     print("done")
     return 0
+
+
+def menus_upload(ftp: ftplib.FTP, destination: str, menus: Path) -> None:
+    """the Switch's menu files into menus/ below the destination, their
+    folders made as needed (the server's MKD fails for one that is there)"""
+    files = sorted(menus.rglob("*.xml")) if menus.is_dir() else []
+    if not files:
+        print("no menu files in %s (ninja switch writes them); the card's are left as they are" % menus)
+        return
+    made = set()
+    for path in files:
+        relative = path.relative_to(menus)
+        folder = destination + "/menus" + "".join("/" + part for part in relative.parent.parts if part != ".")
+        if folder not in made:
+            parts = folder.split("/")
+            for depth in range(len(destination.split("/")) + 1, len(parts) + 1):
+                try:
+                    ftp.mkd("/".join(parts[:depth]))
+                except ftplib.error_perm:
+                    pass
+            made.add(folder)
+        ftp.cwd(folder)
+        print("%s -> %s/%s" % (path, folder, path.name))
+        with path.open("rb") as handle:
+            ftp.storbinary("STOR " + path.name, handle)
+    ftp.cwd(destination)
 
 
 if __name__ == "__main__":
