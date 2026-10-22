@@ -29,6 +29,7 @@ a time, and only the atlas's rows that changed are sent again.
 #include "port_config.h"
 #include "dk_commands.h"
 #include "dk_textures.h"
+#include "dk_overlay.h"
 #include "hud_hires.h"
 #include "menu_files.h"
 #include "text_hires.h"
@@ -661,6 +662,12 @@ static uint32_t id_take(void)
 	if (id_next >= DK_TEXTURE_LIMIT)
 		return 0;
 	return id_next++;
+}
+
+/* an image number reserved for good (the overlay's images: dk_overlay.h) */
+uint32_t dk_texture_id_reserve(void)
+{
+	return id_take();
 }
 
 /* Draws mostly bind the textures the draws before them bound. A lookup of a

@@ -95,7 +95,8 @@ GUEST_IMAGE_BASE = 0x3c000000
 # The OpenGL renderer's device, texture cache, anti-aliasing passes and
 # shader cache, whose places the deko3d renderer's units take; and the
 # host-only units the guest runtime replaces
-OPENGL_ONLY = {"d3d8_gl.c", "xbox_textures.c", "xgpu_post.c", "xgpu_shader_cache.c"}
+# (ui_overlay.c draws with GL: port/switch/guest/ui_overlay_dk.c is its twin here)
+OPENGL_ONLY = {"d3d8_gl.c", "xbox_textures.c", "xgpu_post.c", "xgpu_shader_cache.c", "ui_overlay.c"}
 GUEST_HOST_ONLY = {"memory_watch.c"}  # replaced by guest_memory_watch.c
 
 # this repository's tools, beside the port
@@ -741,7 +742,10 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     # the host; its GLSL generators (the OpenGL renderer's nv2a_vsh.c and
     # nv2a_psh.c stay in the image, and the copies' names do not collide with
     # them); and the shader cache's guest half
-    for name in ("d3d8_dk.c", "xbox_textures_dk.c", "nv2a_vsh_dk.c", "nv2a_psh_dk.c", "dk_shaders.c"):
+    # and the overlay's drawing (the game list's screens: ui_overlay_dk.c,
+    # the game's ui_overlay.c with its OpenGL part replaced)
+    for name in ("d3d8_dk.c", "xbox_textures_dk.c", "nv2a_vsh_dk.c", "nv2a_psh_dk.c", "dk_shaders.c",
+                 "ui_overlay_dk.c"):
         objects.append(guest_object(PORT_DIR / "guest" / name, platform_cflags))
     n.build(outputs=image, rule="switch_guest_link", inputs=objects, implicit=[libguestc, linker_script])
 

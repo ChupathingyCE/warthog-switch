@@ -24,6 +24,10 @@ and presenting go there; a draw and a visibility test do nothing yet.
 #include "dk_commands.h"
 #include "dk_shaders.h"
 #include "dk_textures.h"
+#include "dk_overlay.h"
+#ifdef HALO_GAME_BROWSER
+#include "ui_overlay.h"
+#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -2883,6 +2887,146 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 		-(long)minimum);
 }
 
+/* ---------- the overlay's draw (ui_overlay_dk.c, dk_overlay.h)
+
+The game list's screens and the Controls screen are drawn by the overlay at
+Present, over the back buffer at its pixels: its vertices with its own two
+shaders and images, blended, with no depth or stencil test and the whole
+target as the viewport. The draw goes through the commands the game's draws
+use, written here directly rather than through the Direct3D state, and what
+the host was told is forgotten after, so the game's next draw tells it all
+again. The vertices go inline in the stream, a piece at a time. */
+
+int dk_overlay_draw(const struct dk_overlay_draw *draw)
+{
+	struct dk_surface back;
+	float back_scale[2];
+	unsigned long sent = 0, piece;
+	int stage;
+
+	surface_describe(&device.back_buffer, FALSE, &back, back_scale);
+	if (back.kind != DK_SURFACE_COLOR || !back.pixel_width || !back.pixel_height || !draw->count ||
+		!draw->stride)
+		return 0;
+	{
+		struct dk_command_targets *command = stream_command(DK_COMMAND_TARGETS, sizeof(*command));
+
+		command->color = back;
+		memset(&command->depth, 0, sizeof(command->depth));
+	}
+	{
+		struct dk_command_state *command = stream_command(DK_COMMAND_STATE, sizeof(*command));
+		struct dk_draw_state *state = &command->state;
+
+		memset(state, 0, sizeof(*state));
+		state->viewport[2] = state->scissor[2] = (int32_t)back.pixel_width;
+		state->viewport[3] = state->scissor[3] = (int32_t)back.pixel_height;
+		state->depth_range[0] = 0.0f;
+		state->depth_range[1] = 1.0f;
+		state->cull = DK_CULL_NONE;
+		state->front_face_ccw = 1;
+		state->fill_mode = DK_FILL_SOLID;
+		state->depth_function = D3DCMP_ALWAYS;
+		state->stencil_function = D3DCMP_ALWAYS;
+		state->stencil_fail = state->stencil_depth_fail = state->stencil_pass = D3DSTENCILOP_KEEP;
+		state->stencil_mask = state->stencil_write_mask = 0xff;
+		state->blend = 1;
+		state->blend_source = D3DBLEND_SRCALPHA;
+		state->blend_destination = D3DBLEND_INVSRCALPHA;
+		state->blend_equation = DK_BLEND_ADD;
+		state->color_mask = 0xf;
+	}
+	{
+		struct dk_command_shaders *command = stream_command(DK_COMMAND_SHADERS, sizeof(*command));
+
+		command->vertex = draw->vertex_shader;
+		command->pixel = draw->pixel_shader;
+	}
+	{
+		/* (the scale from window pixels to clip space, the device's origin
+		at the upper left: ui_overlay_dk.c's vertex shader) */
+		struct dk_command_vertex_parameters *command = stream_command(DK_COMMAND_VERTEX_PARAMETERS, sizeof(*command));
+
+		memset(&command->parameters, 0, sizeof(command->parameters));
+		command->parameters.viewport_scale[0] = 2.0f / (float)draw->window_width;
+		command->parameters.viewport_scale[1] = -2.0f / (float)draw->window_height;
+		command->parameters.viewport_scale[2] = 1.0f;
+		command->parameters.viewport_scale[3] = 1.0f;
+	}
+	{
+		/* (the cutouts, then the window's height, in ps_c0) */
+		struct dk_command_pixel_parameters *command = stream_command(DK_COMMAND_PIXEL_PARAMETERS, sizeof(*command));
+
+		memset(&command->parameters, 0, sizeof(command->parameters));
+		memcpy(command->parameters.ps_c0, draw->cutouts, sizeof(draw->cutouts));
+		command->parameters.ps_c0[4][0] = (float)draw->window_height;
+	}
+	{
+		static const uint32_t formats[5] = { DK_ATTRIBUTE_FLOAT2, DK_ATTRIBUTE_FLOAT2, DK_ATTRIBUTE_FLOAT4,
+			DK_ATTRIBUTE_FLOAT2, DK_ATTRIBUTE_BYTE4 };
+		static const uint32_t offsets[5] = { 0, 8, 16, 32, 40 };
+		struct dk_command_vertex_format *command = stream_command(DK_COMMAND_VERTEX_FORMAT, sizeof(*command));
+		unsigned long index;
+
+		memset(&command->format, 0, sizeof(command->format));
+		for (index = 0; index < 5; index++)
+		{
+			command->format.attributes[index].format = formats[index];
+			command->format.attributes[index].stream = 0;
+			command->format.attributes[index].offset = offsets[index];
+		}
+		command->format.strides[0] = (uint32_t)draw->stride;
+		command->format.stream_mask = 1;
+	}
+	{
+		struct dk_command_textures *command = stream_command(DK_COMMAND_TEXTURES, sizeof(*command));
+
+		memset(command->stages, 0, sizeof(command->stages));
+		for (stage = 0; stage < 3; stage++)
+		{
+			struct dk_stage_texture *texture = &command->stages[stage];
+
+			texture->id = draw->textures[stage];
+			texture->sampler.min_linear = 1;
+			texture->sampler.mag_linear = 1;
+			texture->sampler.mip_filter = DK_MIP_NONE;
+			texture->sampler.wrap[0] = texture->sampler.wrap[1] = texture->sampler.wrap[2] = DK_WRAP_CLAMP;
+			texture->sampler.anisotropy = 1.0f;
+		}
+	}
+	/* the vertices, in pieces the stream has room for, whole triangles each */
+	piece = (STREAM_SIZE - 16384) / draw->stride;
+	piece -= piece % 3;
+	while (sent < draw->count)
+	{
+		unsigned long count = draw->count - sent < piece ? draw->count - sent : piece;
+		struct dk_command_draw *command;
+
+		count -= count % 3;
+		if (!count)
+			break;
+		command = stream_command(DK_COMMAND_DRAW, sizeof(*command) + 2 * sizeof(uint32_t) + count * draw->stride);
+		command->primitive = DK_PRIMITIVE_TRIANGLES;
+		command->count = (uint32_t)count;
+		command->index_address = 0;
+		command->vertex_offset = 0;
+		command->inline_bytes = (uint32_t)(count * draw->stride);
+		command->stream_count = 1;
+		command->streams[0][0] = 0;
+		command->streams[0][1] = (uint32_t)(count * draw->stride);
+		memcpy(&command->streams[1], (const unsigned char *)draw->vertices + sent * draw->stride, count * draw->stride);
+		sent += count;
+	}
+	/* (what the host holds is this draw's now) */
+	targets_known = FALSE;
+	state_known = FALSE;
+	shaders_known = FALSE;
+	parameters_known = FALSE;
+	format_known = FALSE;
+	textures_known = FALSE;
+	return 1;
+}
+
 /* ---------- immediate mode */
 
 void WINAPI D3DDevice_Begin(D3DPRIMITIVETYPE primitive_type)
@@ -3226,6 +3370,20 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		statistics_enabled = config_boolean("debug.gpu_stats");
 	if (statistics_enabled > 0 && device.frame % 60 == 0)
 		draw_statistics_log();
+#ifdef HALO_GAME_BROWSER
+	/* the overlay's screens, over the back buffer at its pixels
+	(ui_overlay_dk.c; d3d8_gl.c draws them at its Present too): the 640x480
+	layout fills the lines and is centred in the columns */
+	{
+		struct dk_surface back;
+		float scale[2];
+
+		surface_describe(&device.back_buffer, FALSE, &back, scale);
+		if (back.kind == DK_SURFACE_COLOR && back.pixel_width && back.pixel_height)
+			ui_overlay_present(0, 0, (int)back.pixel_width, (int)back.pixel_height, (int)back.pixel_width,
+				(int)back.pixel_height);
+	}
+#endif
 	{
 		struct dk_command_present *command = stream_command(DK_COMMAND_PRESENT, sizeof(*command));
 		float scale[2];
