@@ -114,6 +114,14 @@ to DK_MAP_WAIT_MS in all (dk_shader_map_loading, dk_shader_map_loaded) */
 /* the startup pass's time a frame, beside its DK_PASS_PER_FRAME keys whose GLSL it makes: a key the host has needs
 only to be asked (17942 keys at eight a frame took the pass fifteen seconds, the menus stuttering throughout) */
 #define DK_PASS_BUDGET_US 2000
+/* and while the first loading screen waits for it (boot_wait), when the game
+thread draws only the loading screen: as many keys as a frame's time allows.
+At eight a frame (about 240 a second at the loading screen's 30), the 1,569
+keys a new keys.dkk brought held the loading screen 8.4 s, and a new console's
+17,000 held it its 30 s; the compile threads, which make about 240 a second
+on two cores, are then handed the whole queue at once, the urgent first */
+#define DK_PASS_BOOT_PER_FRAME 4096
+#define DK_PASS_BOOT_BUDGET_US 25000
 /* the first loading screen (the menus' map, at the start) stays up until the shader cache has started, its pass and
 the preload are done and nothing urgent is compiling, for this long at most, so that the menus come up smooth; the
 preload loads this many a frame meanwhile */
@@ -1087,7 +1095,10 @@ void dk_shader_frame(void)
 	stall_frame();
 	status_frame();
 	preload_frame();
-	pass_frame(DK_PASS_PER_FRAME, DK_PASS_BUDGET_US);
+	if (boot_waiting)
+		pass_frame(DK_PASS_BOOT_PER_FRAME, DK_PASS_BOOT_BUDGET_US);
+	else
+		pass_frame(DK_PASS_PER_FRAME, DK_PASS_BUDGET_US);
 }
 
 /* The first seconds of a map's play, campaign or multiplayer: a draw whose
