@@ -18,6 +18,7 @@ host_dk_shader_pending
 host_dk_shader_pending_urgent
 host_dk_shader_priority_lower
 host_dk_shader_loading
+host_dk_shader_load_first
 host_dk_shader_preload_done
 host_dk_shader_loose_loads
 # the controller's gyroscope (port/switch/host/host_sdl2.c). yaw and pitch are

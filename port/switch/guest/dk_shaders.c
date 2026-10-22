@@ -23,7 +23,12 @@ nothing but the shaders themselves is ever shared.
 The key files, in z:\shader_keys\: console.dkk, the keys this console met
 first (phase 6's draws append the ones they miss; the import below writes
 it once), and keys.dkk, whatever is put there to be shared - the merged
-file a release ships, or a file a player copies in (phase 8). They are read
+file a release ships, or a file a player copies in (phase 8). console.dkk
+never holds a key keys.dkk has: the draws append only keys neither file
+holds, the import leaves the shared ones out, and every start rewrites it
+without its duplicates and the keys a newer keys.dkk brought
+(console_compact) - which the preload, loading every console key at the
+start, would otherwise load there rather than with their map. They are read
 by these names, not by listing the folder, because the console's host has
 no way to list a directory for the guest (host_syscall.c's getdents64: no
 libc function and no service for it).
@@ -62,6 +67,7 @@ uint32_t host_dk_shader_pending(void);
 uint32_t host_dk_shader_pending_urgent(uint32_t priority);
 void host_dk_shader_priority_lower(uint32_t from, uint32_t to);
 uint32_t host_dk_shader_loading(void);
+uint32_t host_dk_shader_load_first(uint32_t stage, uint64_t hash);
 void host_dk_shader_preload_done(void);
 uint32_t host_dk_shader_loose_loads(void);
 
@@ -317,6 +323,17 @@ static int key_slots_make(unsigned long capacity)
 	return 1;
 }
 
+/* the key of a hash, or NULL */
+static struct dk_key *key_find(uint64_t hash)
+{
+	unsigned long slot;
+
+	if (!key_slot_count)
+		return NULL;
+	slot = key_slot_of(hash);
+	return key_slots[slot] ? &keys[key_slots[slot] - 1] : NULL;
+}
+
 /* records are deduplicated by their shader hash as they are read; the
 first of a hash wins, which is also what a file a player shares counts on */
 static struct dk_key *key_add(uint32_t stage, uint32_t map_hash, const void *data)
@@ -373,12 +390,18 @@ static unsigned long keys_read_file(const char *xbox_path)
 			if (record.stage == DK_SHADER_STAGE_VERTEX || record.stage == DK_SHADER_STAGE_PIXEL)
 			{
 				struct dk_key *key = key_add(record.stage, record.map_hash, record.data);
+				int shared = !strcmp(xbox_path, DK_KEY_SHARED_FILE);
 
 				if (key)
 				{
-					key->shared = !strcmp(xbox_path, DK_KEY_SHARED_FILE);
+					key->shared = shared;
 					added++;
 				}
+				/* (a key console.dkk had first, which keys.dkk has too: the
+				shared file's, loaded with its map - console_compact takes it
+				out of console.dkk) */
+				else if (shared && (key = key_find(key_hash(record.stage, record.data))) != NULL)
+					key->shared = 1;
 			}
 		}
 	}
@@ -604,7 +627,11 @@ static void import_program_records(void)
 	/* the store, as the console's own key file: what a player sends, and
 	what the next start reads instead of importing again */
 	for (id = 0; id < key_count; id++)
-		console_append(keys[id].stage, keys[id].map_hash, &keys[id].data, key_data_size(keys[id].stage));
+	{
+		/* (never the shared file's: they are keys.dkk's to give) */
+		if (!keys[id].shared)
+			console_append(keys[id].stage, keys[id].map_hash, &keys[id].data, key_data_size(keys[id].stage));
+	}
 	platform_log("shader keys: %lu program records imported as %lu keys (%lu vertex, %lu pixel, %lu records' "
 		"programs not made), written to %s", records, key_count, vertex_keys, pixel_keys, skipped,
 		DK_KEY_CONSOLE_FILE);
@@ -745,6 +772,107 @@ static BOOL pass_ask(struct dk_key *key, uint32_t priority, int *generated)
 
 /* ---------- start, the pass, maps, draws */
 
+/* console.dkk rewritten without what it should not hold - a record of a
+key it holds already (older builds appended some twice), and a key keys.dkk
+has (keys_read_file marked them shared: a newer keys.dkk brought them) - if
+it holds any: the records kept go to a file beside it, which then takes its
+place, so a write cut short leaves the file as it was. Before anything is
+appended (dk_shader_start), and under the writer's lock all the same. */
+static void console_compact(void)
+{
+	char path[512], new_path[520];
+	FILE *file, *out = NULL;
+	uint32_t header[3];
+	struct dk_key_record record;
+	unsigned long kept = 0, duplicates = 0, shared = 0;
+	/* which keys of the store a record of this file has given already (each
+	record's key is in the store: keys_read_file put it there) */
+	unsigned char *seen = calloc(key_count ? key_count : 1, 1);
+	int pass;
+
+	if (!seen)
+		return;
+
+	platform_translate_path(DK_KEY_CONSOLE_FILE, path, sizeof(path));
+	snprintf(new_path, sizeof(new_path), "%s.new", path);
+	pthread_mutex_lock(&write_lock);
+	/* two passes over it: the first counts what would go, the second (only
+	if anything does) writes what stays */
+	for (pass = 0; pass < 2; pass++)
+	{
+		if ((file = fopen(path, "rb")) == NULL)
+			break;
+		setvbuf(file, NULL, _IOFBF, 256 * 1024);
+		if (fread(header, sizeof(header), 1, file) != 1 || header[0] != DK_KEY_MAGIC || header[1] != DK_KEY_FORMAT ||
+			header[2] != sizeof(record))
+		{
+			fclose(file);
+			break;
+		}
+		if (pass == 1)
+		{
+			if ((out = fopen(new_path, "wb")) == NULL)
+			{
+				platform_log("shader keys: %s cannot be written; %s keeps its %lu keys to drop till the next start",
+					new_path, path, duplicates + shared);
+				fclose(file);
+				break;
+			}
+			setvbuf(out, NULL, _IOFBF, 256 * 1024);
+			fwrite(header, sizeof(header), 1, out);
+		}
+		memset(seen, 0, key_count ? key_count : 1);
+		while (fread(&record, sizeof(record), 1, file) == 1)
+		{
+			struct dk_key *key;
+			unsigned long index;
+
+			if (record.stage != DK_SHADER_STAGE_VERTEX && record.stage != DK_SHADER_STAGE_PIXEL)
+				continue;
+			key = key_find(key_hash(record.stage, record.data));
+			if (!key)
+				continue;
+			if (key->shared)
+			{
+				shared += pass == 0;
+				continue;
+			}
+			index = (unsigned long)(key - keys);
+			if (seen[index])
+			{
+				duplicates += pass == 0;
+				continue;
+			}
+			seen[index] = 1;
+			if (pass == 1)
+			{
+				fwrite(&record, sizeof(record), 1, out);
+				kept++;
+			}
+		}
+		fclose(file);
+		if (pass == 0 && !duplicates && !shared)
+			break;
+	}
+	if (out)
+	{
+		int written = !ferror(out);
+
+		written = fclose(out) == 0 && written;
+		if (written && rename(new_path, path) == 0)
+			platform_log("shader keys: %s rewritten with its %lu keys, without %lu records of keys it held already "
+				"and %lu of keys keys.dkk has", path, kept, duplicates, shared);
+		else
+		{
+			remove(new_path);
+			platform_log("shader keys: %s could not be rewritten; it keeps its %lu keys to drop till the next start",
+				path, duplicates + shared);
+		}
+	}
+	free(seen);
+	pthread_mutex_unlock(&write_lock);
+}
+
 void dk_shader_start(void)
 {
 	char path[512], folder[512];
@@ -762,6 +890,8 @@ void dk_shader_start(void)
 		fclose(console);
 	keys_read_file(DK_KEY_CONSOLE_FILE);
 	keys_read_file(DK_KEY_SHARED_FILE);
+	if (console)
+		console_compact();
 	if (!console)
 		import_program_records();
 	else if (key_count == before)
@@ -948,14 +1078,54 @@ static void pass_frame(unsigned long limit, unsigned long long budget_us)
 	}
 }
 
+static void stall_frame(void);
+
 void dk_shader_frame(void)
 {
 	if (!started)
 		return;
+	stall_frame();
 	status_frame();
 	preload_frame();
 	pass_frame(DK_PASS_PER_FRAME, DK_PASS_BUDGET_US);
 }
+
+/* The first seconds of a map's play, campaign or multiplayer: a draw whose
+shader is not ready waits for it (the loader reading it from the card, or a
+compile thread making it) instead of being skipped, so the level does not
+appear a piece at a time - the shaders the maps share are loaded at a draw,
+not with the map that did not meet them first. DK_STALL_WINDOW_MS from the
+map's first draw, DK_STALL_DRAW_MS at most for a draw and DK_STALL_TOTAL_MS
+in all (a network game's other machines wait on a host's frames); then, and
+past either, a draw skips as it always has. */
+#define DK_STALL_WINDOW_MS 10000
+#define DK_STALL_DRAW_MS 500
+#define DK_STALL_TOTAL_MS 3000
+
+static BOOL stall_armed;
+static BOOL stall_open;
+static unsigned long long stall_until_ms;
+static unsigned long long stall_spent_us;
+static unsigned long stall_given_up;
+
+/* what the window's waits were for, for its line in the log: a shader being
+compiled (queued, or a compile thread's: it is loaded once it is made), or
+one on the card being loaded; and its frames, how many waited and the most a
+frame waited */
+enum
+{
+	STALL_COMPILE,
+	STALL_LOAD,
+	STALL_KINDS
+};
+
+static struct
+{
+	unsigned long draws;
+	unsigned long long spent_us, longest_us;
+} stall_kinds[STALL_KINDS];
+static unsigned long stall_frames, stall_frames_waited;
+static unsigned long long stall_frame_us, stall_frame_longest_us;
 
 /* The wait for a map's shaders under the loading screen, DK_MAP_WAIT_MS at
 most from when its load began: first while the loading screen is drawn, as
@@ -1178,6 +1348,8 @@ void dk_shader_map_loaded(uint32_t map_hash)
 	}
 	/* (the next load of a map, this one again too, waits anew) */
 	wait_map = 0;
+	/* and its first seconds of play wait for their shaders (stall_wait) */
+	stall_armed = TRUE;
 }
 
 /* for phase 6: the shader a draw needs. 0 means not ready, and the draw is
@@ -1249,6 +1421,117 @@ static void glsl_write(uint32_t stage, uint64_t hash, const void *key_data)
 	free(glsl);
 }
 
+/* the window closed, and what it waited for said */
+static void stall_close(void)
+{
+	stall_open = FALSE;
+	platform_log("shader cache: the map's first %d s: %lu of %lu frames waited for shaders, the longest %llu ms; "
+		"%lu waits for a compile, %llu ms in all, the longest %llu ms; %lu for a load from the card, %llu ms, the "
+		"longest %llu ms; %lu gave up", DK_STALL_WINDOW_MS / 1000, stall_frames_waited, stall_frames,
+		stall_frame_longest_us / 1000ULL, stall_kinds[STALL_COMPILE].draws,
+		stall_kinds[STALL_COMPILE].spent_us / 1000ULL, stall_kinds[STALL_COMPILE].longest_us / 1000ULL,
+		stall_kinds[STALL_LOAD].draws, stall_kinds[STALL_LOAD].spent_us / 1000ULL,
+		stall_kinds[STALL_LOAD].longest_us / 1000ULL, stall_given_up);
+}
+
+/* each frame (dk_shader_frame): the frame before counted, if the window is
+open, and the window closed once its time is up even with no draw waiting */
+static void stall_frame(void)
+{
+	if (!stall_open)
+		return;
+	stall_frames++;
+	if (stall_frame_us)
+	{
+		stall_frames_waited++;
+		if (stall_frame_us > stall_frame_longest_us)
+			stall_frame_longest_us = stall_frame_us;
+	}
+	stall_frame_us = 0;
+	if (now_ms() >= stall_until_ms)
+		stall_close();
+}
+
+/* whether a draw now may wait for its shader (the window opened at the
+map's first draw, and said when it closes) */
+static BOOL stall_allowed(void)
+{
+	unsigned long long now = now_ms();
+
+	if (stall_armed)
+	{
+		stall_armed = FALSE;
+		stall_open = TRUE;
+		stall_until_ms = now + DK_STALL_WINDOW_MS;
+		stall_spent_us = 0;
+		stall_given_up = 0;
+		memset(stall_kinds, 0, sizeof(stall_kinds));
+		stall_frames = stall_frames_waited = 0;
+		stall_frame_us = stall_frame_longest_us = 0;
+	}
+	if (!stall_open)
+		return FALSE;
+	if (now >= stall_until_ms)
+	{
+		stall_close();
+		return FALSE;
+	}
+	return stall_spent_us < DK_STALL_TOTAL_MS * 1000ULL;
+}
+
+/* a draw's shader waited for (its compile or load already asked for): the
+handle, or 0 if it did not come in time */
+static uint32_t stall_wait(uint32_t stage, uint64_t hash)
+{
+	unsigned long long started = now_us(), waited = 0, most = DK_STALL_DRAW_MS * 1000ULL;
+	uint32_t handle = 0, state;
+	/* (on the card and not yet loaded: a load's; else a compile's) */
+	int kind = host_dk_shader_known(stage, hash) == 2 ? STALL_LOAD : STALL_COMPILE;
+
+	if (most > DK_STALL_TOTAL_MS * 1000ULL - stall_spent_us)
+		most = DK_STALL_TOTAL_MS * 1000ULL - stall_spent_us;
+	while (waited < most)
+	{
+		/* (read next, if it is on the card: after a compile it is queued
+		behind the map's loads like any other) */
+		host_dk_shader_load_first(stage, hash);
+		usleep(1000);
+		state = 0;
+		handle = host_dk_shader_find(stage, hash, (uint32_t)(uintptr_t)&state);
+		waited = now_us() - started;
+		if (handle || !state)
+			break;
+	}
+	stall_spent_us += waited;
+	stall_frame_us += waited;
+	stall_kinds[kind].draws++;
+	stall_kinds[kind].spent_us += waited;
+	if (waited > stall_kinds[kind].longest_us)
+		stall_kinds[kind].longest_us = waited;
+	if (!handle)
+		stall_given_up++;
+	return handle;
+}
+
+/* stall_wait, and the handle it brings kept as a found one is */
+static uint32_t stall_found(uint32_t stage, uint64_t hash, const void *data)
+{
+	uint32_t handle = stall_wait(stage, hash);
+	struct handle_entry *entry;
+
+	if (!handle)
+		return 0;
+	entry = handle_slot(hash);
+	if (entry->hash != hash && handle_count < HANDLE_SLOTS / 8 * 7)
+	{
+		entry->hash = hash;
+		entry->handle = handle;
+		handle_count++;
+		glsl_write(stage, hash, data);
+	}
+	return handle;
+}
+
 uint32_t dk_shader_for_draw(uint32_t stage, const void *key_data)
 {
 	union
@@ -1310,7 +1593,8 @@ uint32_t dk_shader_for_draw(uint32_t stage, const void *key_data)
 		/* queued or being compiled: the draw's priority, if more urgent
 		than whoever queued it (no GLSL is wanted for that) */
 		host_dk_shader_compile(stage, hash, 0, 0, DK_SHADER_PRIORITY_DRAW);
-		return 0;
+		/* (in a map's first seconds, waited for: stall_wait) */
+		return stall_allowed() ? stall_found(stage, hash, &data) : 0;
 	}
 	/* unknown to the host: kept in console.dkk if this console has never
 	met it, and queued at the draw's priority - the compile is a few frames
@@ -1329,6 +1613,8 @@ uint32_t dk_shader_for_draw(uint32_t stage, const void *key_data)
 			host_dk_shader_compile(stage, hash, (uint32_t)(uintptr_t)glsl, (uint32_t)strlen(glsl),
 				DK_SHADER_PRIORITY_DRAW);
 			free(glsl);
+			if (stall_allowed())
+				return stall_found(stage, hash, &data);
 		}
 	}
 	return 0;

@@ -1705,6 +1705,49 @@ void host_dk_shader_preload_done(void)
 	dksh.preload_done = 1;
 }
 
+uint32_t host_dk_shader_load_first(uint32_t stage, uint64_t hash)
+{
+	struct dksh_slot *slot;
+	uint32_t index, first = 0;
+
+	if (!dksh.started || !dksh.loader_started)
+		return 0;
+	pthread_mutex_lock(&dksh.lock);
+	slot = set_find(hash);
+	if (slot && slot->stage == stage && !slot->broken && !slot->handle && !slot->unloadable)
+	{
+		for (index = 0; index < dksh.load_count; index++)
+		{
+			if (dksh.load_queue[index].hash == hash && dksh.load_queue[index].stage == stage)
+				break;
+		}
+		if (index < dksh.load_count)
+		{
+			/* queued: to the front */
+			if (index)
+			{
+				memmove(&dksh.load_queue[1], &dksh.load_queue[0], index * sizeof(dksh.load_queue[0]));
+				dksh.load_queue[0].hash = hash;
+				dksh.load_queue[0].stage = stage;
+			}
+			first = 1;
+		}
+		else if (!slot->loading && dksh.load_count < DKSH_LOAD_QUEUE)
+		{
+			/* not queued (nor being read now): put at the front */
+			memmove(&dksh.load_queue[1], &dksh.load_queue[0], dksh.load_count * sizeof(dksh.load_queue[0]));
+			dksh.load_queue[0].hash = hash;
+			dksh.load_queue[0].stage = stage;
+			dksh.load_count++;
+			slot->loading = 1;
+			pthread_cond_signal(&dksh.load_condition);
+			first = 1;
+		}
+	}
+	pthread_mutex_unlock(&dksh.lock);
+	return first;
+}
+
 uint32_t host_dk_shader_loading(void)
 {
 	uint32_t loading;

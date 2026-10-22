@@ -333,6 +333,11 @@ void host_dk_shader_priority_lower(uint32_t from, uint32_t to);
 /* how many shaders on the card are queued for, or being read by, the loader
 thread (the guest's preload and its wait under the loading screen) */
 uint32_t host_dk_shader_loading(void);
+/* a shader on the card a draw is waiting for (the first seconds of a map:
+dk_shaders.c's stall_wait), to the front of the loader thread's queue, or
+put there if it is not queued: read next, not after a map's thousand. 1 if it
+is at the front now */
+uint32_t host_dk_shader_load_first(uint32_t stage, uint64_t hash);
 /* the guest's preload has asked for every shader it knows: what is left in
 the cache's folder (from before the pack) is removed, a little at a time */
 void host_dk_shader_preload_done(void);
