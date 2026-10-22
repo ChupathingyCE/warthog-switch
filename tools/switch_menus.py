@@ -89,8 +89,9 @@ GYRO_ROWS = [
 # rest of Android's are its own (its anti-aliasing is the OpenGL renderer's)
 ANDROID_ROWS_KEPT = {"display.interpolation"}
 # rows for every platform the Switch leaves out: the menus stay the
-# Chupathingy ones
-ROWS_LEFT_OUT = {"display.menus"}
+# Chupathingy ones, and the clipboard is the process's own (host_sdl2.c), so
+# nothing is joined from it or copied to it for anyone
+ROWS_LEFT_OUT = {"display.menus", "network.join_from_clipboard", "network.copy_to_clipboard"}
 # the main menu's way to the quit screen: the row, taken out, and B's and
 # Back's, made to do nothing (with no handler B's default is back, which
 # closes the main menu itself)
