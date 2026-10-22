@@ -964,7 +964,7 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     )
     n.build(outputs=menus_stamp, rule="switch_menus",
             implicit=[TOOLS_DIR / "switch_menus.py", GAME_TOOLS / "port_settings.py",
-                      game / "port" / "assets" / "menus" / "ce" / "main_menu.xml",
+                      game / "port" / "assets" / "menus" / "chupathingy" / "main_menu.xml",
                       game / "port" / "assets" / "menus" / "menus.json"])
 
     n.build(outputs="switch", rule="phony", inputs=[nro, image, menus_stamp])

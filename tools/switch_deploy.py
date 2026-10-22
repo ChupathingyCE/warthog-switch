@@ -102,6 +102,13 @@ def menus_upload(ftp: ftplib.FTP, destination: str, menus: Path) -> None:
     if not files:
         print("no menu files in %s (ninja switch writes them); the card's are left as they are" % menus)
         return
+    # (a menu file of an earlier build that this one does not write would
+    # go on replacing the game's: taken off the card)
+    wanted = set(path.relative_to(menus).as_posix() for path in files)
+    for folder, name in card_menu_files(ftp, destination + "/menus"):
+        if folder[len(destination) + len("/menus"):].lstrip("/") + ("/" if folder != destination + "/menus" else "") + name not in wanted:
+            print("%s/%s: not in this build; removed from the card" % (folder, name))
+            ftp.delete(folder + "/" + name)
     made = set()
     for path in files:
         relative = path.relative_to(menus)
@@ -119,6 +126,35 @@ def menus_upload(ftp: ftplib.FTP, destination: str, menus: Path) -> None:
         with path.open("rb") as handle:
             ftp.storbinary("STOR " + path.name, handle)
     ftp.cwd(destination)
+
+
+def card_menu_files(ftp: ftplib.FTP, folder: str) -> list:
+    """the .xml files below the card's menus folder, as (folder, name), two
+    levels deep (the game's own layout); none when the folder is not there"""
+    found = []
+    try:
+        ftp.cwd(folder)
+    except ftplib.error_perm:
+        return found
+    entries = []
+    ftp.retrlines("LIST", entries.append)
+    for entry in entries:
+        parts = entry.split(None, 8)
+        if len(parts) < 9:
+            continue
+        name = parts[8]
+        if entry.startswith("d"):
+            inner = []
+            ftp.cwd(folder + "/" + name)
+            ftp.retrlines("LIST", inner.append)
+            for line in inner:
+                words = line.split(None, 8)
+                if len(words) == 9 and not line.startswith("d") and words[8].endswith(".xml"):
+                    found.append((folder + "/" + name, words[8]))
+            ftp.cwd(folder)
+        elif name.endswith(".xml"):
+            found.append((folder, name))
+    return found
 
 
 if __name__ == "__main__":

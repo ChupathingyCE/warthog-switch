@@ -178,10 +178,14 @@ falls behind. Video Setup has rows for both (RESOLUTION LIMIT and DYNAMIC
 RESOLUTION) and for the CPU clock below: those rows are the Switch's own
 menu files (`tools/switch_menus.py`, written by `ninja switch` into
 `build/switch/menus` and put on the card as `menus/` by the packager and
-the deploy tool), which the game takes over its built-in ones; the files
-also take QUIT GAME off the main menu (HOME is the way out) and stop Create
-Game's most-players spinner at 48, the most a game hosted on the console
-was measured to hold.
+the deploy tool), which the game takes over its built-in ones. The Switch
+keeps to the Chupathingy menus, the game's default: the files are theirs,
+they take QUIT off the main menu (HOME is the way out) and MENU STYLE off
+Interface, and the PC version's and the Xbox's menus are not adjusted for
+the console (`display.menus` in `config.toml` still chooses them, as they
+are). The most players a game hosted on the console may have is 48, the
+most it was measured to hold: the host setup's row stops there (the game's
+`menu_functions.c`, behind `HALO_SWITCH_CONSOLE`).
 
 `performance.cpu_clock` in `config.toml` is the CPU's clock: `"1785"` (the
 default, 1.7 GHz, the fastest Nintendo's own games use), `"1020"` (the

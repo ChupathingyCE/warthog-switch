@@ -6,24 +6,28 @@
 The game's menus are XML files embedded in it (chupathingyce/port/assets/menus,
 tools/embed_assets.py), and a file of the same name in the data folder's
 menus/ replaces the embedded one when the game starts (port/linux/src/
-menu_files.c logs each). The Switch's settings differ from the desktop's and
-Android's, and rather than carry its rows in the game's files, the port
-writes the few files it needs its own of, with the game's generator
-(chupathingyce/tools/port_settings.py) and its rows:
+menu_files.c logs each). The Switch keeps to the Chupathingy menus (the
+game's default, display.menus; the PC version's and the Xbox's menus are
+not adjusted for it), and rather than carry its rows in the game's files,
+the port writes the three files it needs its own of, with the game's
+generator (chupathingyce/tools/port_settings.py) and its rows:
 
-- Video Setup (ce/...video_settings.xml, and the Chupathingy menus' settings
-  pages, chupathingy/settings_pages.xml): the rows the Switch has, packed
-  with no gaps where the desktop's would be, and its own: RESOLUTION LIMIT
-  (display.resolution_limit), DYNAMIC RESOLUTION (display.dynamic_resolution)
-  and CPU CLOCK (performance.cpu_clock), which the game declares and the
-  Switch's renderer and host read.
-- The main menu (ce/main_menu.xml): no QUIT GAME, and B does not offer to
-  quit: the console's HOME button is the way out.
-- Create Game's server settings (ce/...server_settings.xml): the most
-  players a game hosted here may have is 48, which the console was measured
-  to hold (port/switch/host/host_main.c, host_net.c), so the spinner stops
-  there; the game indexes its own table by position, so the first eight
-  choices are the same ones.
+- The settings pages (chupathingy/settings_pages.xml): each page with the
+  rows the Switch has, packed with no gaps where the desktop's would be, and
+  Video Setup with its own: RESOLUTION LIMIT (display.resolution_limit),
+  DYNAMIC RESOLUTION (display.dynamic_resolution) and CPU CLOCK
+  (performance.cpu_clock), which the game declares and the Switch's
+  renderer and host read. Interface loses MENU STYLE, so the menus stay the
+  Chupathingy ones (config.toml's display.menus still chooses, for anyone
+  who wants the others as they are). The pages place rows whose widgets the
+  PC version's screen files define, so Video Setup's file
+  (ce/...video_settings.xml) is written too, for the three rows' widgets.
+- The main menu (chupathingy/main_menu.xml): no QUIT, and B does not offer
+  to quit: the console's HOME button is the way out.
+
+The most players a game hosted here may have is 48 (port/linux/game/
+menu_functions.c's HOSTED_PLAYERS_LIMIT, behind HALO_SWITCH_CONSOLE), which
+the console was measured to hold; the host setup's row stops there.
 
 tools/switch_package.py and tools/switch_deploy.py put the folder on the
 card beside the program.
@@ -41,10 +45,10 @@ MENUS = GAME / "port" / "assets" / "menus"
 sys.path.insert(0, str(GAME / "tools"))
 import port_settings  # noqa: E402
 
-PE = port_settings.PE
-VIDEO = f"{PE}/video_settings".replace("/", ".") + ".xml"
-SERVER = f"{port_settings.MT}/server_settings".replace("/", ".") + ".xml"
-MAIN_MENU = "main_menu.xml"
+MAIN_MENU = "chupathingy/main_menu.xml"
+SETTINGS_PAGES = "chupathingy/settings_pages.xml"
+VIDEO_NAME = f"{port_settings.PE}/video_settings".replace("/", ".") + ".xml"
+VIDEO = f"ce/{VIDEO_NAME}"
 
 # the Switch's rows of Video Setup, after the rows it shares with the others
 # (label, setting, choices, help, platform): the setting is the game's, its
@@ -61,8 +65,13 @@ SWITCH_VIDEO_ROWS = [
 # the Android rows the Switch has too (its game is built as Android's): the
 # rest of Android's are its own (its anti-aliasing is the OpenGL renderer's)
 ANDROID_ROWS_KEPT = {"display.interpolation"}
-# the most players a game hosted on the console may have
-HOSTED_PLAYERS_LIMIT = 48
+# rows for every platform the Switch leaves out: the menus stay the
+# Chupathingy ones
+ROWS_LEFT_OUT = {"display.menus"}
+# the main menu's way to the quit screen: the row, and B's and Back's
+QUIT_LINES = ('<on event="back" open="chupathingy/quit_screen"/>',
+              '<on event="b" open="chupathingy/quit_screen"/>',
+              '<child widget="chupathingy/main_menu_quit"')
 
 
 def switch_rows(rows: list) -> list:
@@ -71,7 +80,7 @@ def switch_rows(rows: list) -> list:
     kept = []
     for row in rows:
         label, setting, choices, help_text, platform, *named = row
-        if platform == "desktop":
+        if platform == "desktop" or setting in ROWS_LEFT_OUT:
             continue
         if platform == "android" and setting not in ANDROID_ROWS_KEPT:
             continue
@@ -79,39 +88,35 @@ def switch_rows(rows: list) -> list:
     return kept
 
 
-def switch_video_spec() -> dict:
-    spec = copy.deepcopy(port_settings.SCREENS["video_settings"])
-    spec["rows"] = switch_rows(spec["rows"]) + SWITCH_VIDEO_ROWS
+def switch_spec(spec: dict, extra_rows: list) -> dict:
+    """a screen's spec with the Switch's rows: the others' pared down and
+    its own added, with no row taking another's place"""
+    spec = copy.deepcopy(spec)
+    spec["rows"] = switch_rows(spec["rows"]) + extra_rows
     # (rows that take the place of a desktop row, which is not here)
     spec["same_place"] = []
-    spec["views"] = [(name, label, help_text, switch_rows(rows)) for name, label, help_text, rows in spec["views"]]
+    spec["views"] = [(name, label, help_text, switch_rows(rows))
+                     for name, label, help_text, rows in spec.get("views", [])]
     return spec
 
 
 def main_menu_lines() -> list:
-    """the game's main menu without QUIT GAME: its row, and B's and Back's
-    way to the quit screen"""
-    lines = (MENUS / "ce" / MAIN_MENU).read_text().split("\n")
-    gone = ('<on event="back" open="main_menu/quit_select/quit_screen"/>',
-            '<on event="b" open="main_menu/quit_select/quit_screen"/>',
-            '<child widget="main_menu/main_menu_item_quit_game"')
-    kept = [line for line in lines if not any(text in line for text in gone)]
-    if len(kept) != len(lines) - 3:
+    """the game's main menu without QUIT"""
+    lines = (MENUS / MAIN_MENU).read_text().split("\n")
+    kept = [line for line in lines if not any(text in line for text in QUIT_LINES)]
+    if len(kept) != len(lines) - len(QUIT_LINES):
         raise SystemExit(f"{MAIN_MENU}: expected the quit row and its two handlers, found {len(lines) - len(kept)}")
     return kept
 
 
 def files() -> dict:
     """the files, by their paths below the menus folder"""
-    port_settings.SCREENS["video_settings"] = switch_video_spec()
-    port_settings.MAXIMUM_PLAYERS = [count for count in port_settings.MAXIMUM_PLAYERS if count <= HOSTED_PLAYERS_LIMIT]
-    settings = port_settings.settings_files()
-    multiplayer = port_settings.multiplayer_files()
+    for folder, spec in port_settings.SCREENS.items():
+        port_settings.SCREENS[folder] = switch_spec(spec, SWITCH_VIDEO_ROWS if folder == "video_settings" else [])
     return {
-        f"ce/{VIDEO}": settings[VIDEO],
-        f"ce/{SERVER}": multiplayer[SERVER],
-        f"ce/{MAIN_MENU}": main_menu_lines(),
-        "chupathingy/settings_pages.xml": port_settings.chupathingy_settings_pages(),
+        SETTINGS_PAGES: port_settings.chupathingy_settings_pages(),
+        MAIN_MENU: main_menu_lines(),
+        VIDEO: port_settings.settings_files()[VIDEO_NAME],
     }
 
 
@@ -121,7 +126,8 @@ def main() -> int:
                         help="the menus folder to write (default: build/switch/menus)")
     parser.add_argument("--stamp", type=Path, help="a file touched when done (the build's)")
     args = parser.parse_args()
-    for name, lines in files().items():
+    written = files()
+    for name, lines in written.items():
         if not (MENUS / name).is_file():
             print(f"{name}: not a file the game embeds, so it would replace nothing", file=sys.stderr)
             return 1
@@ -131,10 +137,14 @@ def main() -> int:
         if not text.endswith("\n"):
             text += "\n"
         path.write_text(text)
+    # (files an earlier version wrote and this one does not)
+    for stale in sorted(args.out.rglob("*.xml")):
+        if stale.relative_to(args.out).as_posix() not in written:
+            stale.unlink()
     if args.stamp:
         args.stamp.parent.mkdir(parents=True, exist_ok=True)
         args.stamp.write_text("")
-    print(f"{args.out}: {len(files())} menu files")
+    print(f"{args.out}: {len(written)} menu files")
     return 0
 
 
