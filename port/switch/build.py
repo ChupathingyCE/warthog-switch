@@ -838,6 +838,11 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             cflags = f"{host_cflags} -I{ZLIB_DIR}"
         if source in browser_sources:
             cflags = browser_cflags + (" -w" if source.name != "posix_browser.c" else "")
+        # (the player key's file is checked to be the user's own and private,
+        # which a FAT card's files never are: the file is taken as the
+        # Android app takes its own storage's, whose check that define skips)
+        if source.name == "posix_browser.c":
+            cflags += " -D__ANDROID__=1"
         if source.name == "host_tls.c":
             cflags = " ".join([host_cflags, f"-I{MBEDTLS_DIR / 'include'}", "-DMBEDTLS_ENTROPY_HARDWARE_ALT",
                                "-DMBEDTLS_PLATFORM_MS_TIME_ALT"])
