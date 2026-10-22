@@ -20,6 +20,10 @@ hashes of their text; and Present hands the gathered vertices to the device
 pixels with its own commands, and forgets the state it told the host so the
 game's next draw tells it again.
 
+The one change to the gathering is the text's size: the screens' text is
+drawn larger for the Switch's own screen (TEXT_SCALE, below), where they
+asked for it.
+
 The game's file is built on the Switch in place of this one's twin
 (port/switch/build.py's OPENGL_ONLY); a change to the gathering there is a
 change to copy here.
@@ -151,6 +155,28 @@ static struct
 
 	struct vertex vertices[MAXIMUM_QUADS * 6];
 } overlay;
+
+/* ---------- the Switch's text size */
+
+/* The screens' text is sized for a monitor; on the Switch's own screen it
+is too small to read at arm's length, so every text, button and logo the
+screens ask for is drawn this much larger, in the place it was asked for
+(centred where its size was centred: a bigger row's name sits in the row).
+Only the public functions scale: the pieces they draw with each other's
+sizes are already scaled. The widths they report are of the larger text,
+so a screen fitting a name to its room fits the text drawn. */
+#define TEXT_SCALE 1.3f
+
+static float scaled(float size)
+{
+	return size * TEXT_SCALE;
+}
+
+/* (the top of the larger text whose middle is where the asked size's was) */
+static float scaled_top(float size, float y)
+{
+	return y - (scaled(size) - size) * 0.5f;
+}
 
 /* ---------- the device's buttons */
 
@@ -353,7 +379,7 @@ static float measure(int font, float size, const char *text)
 
 float ui_overlay_text_width(int font, float size, const char *text)
 {
-	return text ? measure(posix_font(font), size, text) : 0.0f;
+	return text ? measure(posix_font(font), scaled(size), text) : 0.0f;
 }
 
 static float add_skewed_text(int font, float size, float x, float y, int align, unsigned int color, float skew,
@@ -389,7 +415,7 @@ static float add_text(int font, float size, float x, float y, int align, unsigne
 
 float ui_overlay_text(int font, float size, float x, float y, int align, unsigned int color, const char *text)
 {
-	return text && *text ? add_text(posix_font(font), size, x, y, align, color, text) : 0.0f;
+	return text && *text ? add_text(posix_font(font), scaled(size), x, scaled_top(size, y), align, color, text) : 0.0f;
 }
 
 /* (a color's alpha times a share of it) */
@@ -410,12 +436,15 @@ float ui_overlay_text_glow(int font, float size, float x, float y, int align, un
 		{ 1.0f, 0.0f }, { -1.0f, 0.0f }, { 0.0f, 1.0f }, { 0.0f, -1.0f },
 		{ 0.7f, 0.7f }, { -0.7f, 0.7f }, { 0.7f, -0.7f }, { -0.7f, -0.7f },
 	};
-	float spread = size * 0.06f > 0.6f ? size * 0.06f : 0.6f;
+	float spread;
 	int face = posix_font(font);
 	int index;
 
 	if (!text || !*text)
 		return 0.0f;
+	y = scaled_top(size, y);
+	size = scaled(size);
+	spread = size * 0.06f > 0.6f ? size * 0.06f : 0.6f;
 	/* (the drop shadow, a unit down and right) */
 	add_text(face, size, x + 0.8f, y + 1.0f, align, fade(0x000000FF, (float)(color & 0xFF) / 255.0f * 0.7f), text);
 	/* (no glow: the shadow alone) */
@@ -634,6 +663,7 @@ float ui_overlay_button_width(int button, float size)
 
 	if (button < 0 || button >= NUMBER_OF_UI_BUTTONS)
 		return 0.0f;
+	size = scaled(size);
 	/* (an Xbox-like pad's: its icon) */
 	if (device == 1 && button_icon(button) >= 0)
 		return icon_width(button_icon(button), size);
@@ -659,6 +689,8 @@ float ui_overlay_button(int button, float size, float x, float y, unsigned int c
 
 	if (button < 0 || button >= NUMBER_OF_UI_BUTTONS)
 		return 0.0f;
+	y = scaled_top(size, y);
+	size = scaled(size);
 	label = pill_labels[device][button];
 	/* an Xbox-like pad's buttons: their icons (snapchipper's) */
 	if (device == 1 && button_icon(button) >= 0)
@@ -721,6 +753,8 @@ int ui_overlay_platform(int platform, float size, float x, float y, unsigned int
 
 	if (platform <= 0 || platform >= NUMBER_OF_DELTA_PLATFORMS || !posix_ui_font_has(POSIX_UI_FONT_PLATFORMS, glyph))
 		return 0;
+	y = scaled_top(size, y);
+	size = scaled(size);
 	utf8(glyph, text);
 	if (shadow)
 		add_text(POSIX_UI_FONT_PLATFORMS, size, x + 0.8f, y + 1.0f, UI_ALIGN_CENTER,
