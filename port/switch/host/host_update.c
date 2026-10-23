@@ -3,9 +3,9 @@ HOST_UPDATE.C
 
 The Switch port's self-updater, as the other platforms have (Updater.java,
 port/linux/src/updater.c): a release's build, made by GitHub Actions for a
-pushed tag v<number>, knows its build number (HALO_BUILD_NUMBER, which names
-its release: build-<number>), and
-before the game starts it asks GitHub for the latest release. If that is newer, the
+pushed tag v<version>, knows its build number (HALO_BUILD_NUMBER, the
+workflow's run number, which names its release: build-<number>), and before
+the game starts it asks GitHub for the latest release. If that is newer, the
 player is offered it; taking it downloads the release's Switch archive,
 installs the program and the game image, and restarts into them. Builds made
 anywhere else have no number and never look, and config.toml's update.auto

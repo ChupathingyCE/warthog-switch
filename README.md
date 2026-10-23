@@ -168,8 +168,9 @@ The [Build workflow](.github/workflows/build.yml) is the same build in
 devkitPro's container, with the NDK and LLVM's clang added to the image: a
 way to build without a devkitPro install, and the set-up to copy for Docker
 on your computer. The [Release workflow](.github/workflows/release.yml)
-builds both flavours for a pushed tag `v<number>` and publishes the release
-`build-<number>`, which the installed builds offer to update to.
+builds both flavours for a pushed tag `v<version>` (`v0.8.0d-beta1`, say) and
+publishes the release `build-<number>`, numbered by the run, which the
+installed builds offer to update to.
 
 [port/switch/README.md](port/switch/README.md) has the port's own account:
 the host and the guest, the memory model, the SDL shim, internet play and
