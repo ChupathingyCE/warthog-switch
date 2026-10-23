@@ -204,6 +204,8 @@ static struct
 	/* the pack was pruned at start (pack_prune): what it held, what is left */
 	int pack_pruned;
 	unsigned long pruned_from, pruned_to;
+	/* how long the pruning took, in milliseconds */
+	unsigned long pruned_ms;
 	/* shaders marked live (asked for) in this run, and how many the live
 	list on the card has */
 	uint32_t live_count, live_written;
@@ -425,7 +427,7 @@ static int pack_prune(long *length, const unsigned char *whole)
 	uint32_t list_header[2];
 	uint64_t *keys = NULL;
 	unsigned long key_count = 0, records = 0, kept = 0;
-	uint32_t offset;
+	uint32_t offset, kept_bytes = 0;
 	int ok = 1;
 
 	live_path(live, sizeof(live));
@@ -467,7 +469,10 @@ static int pack_prune(long *length, const unsigned char *whole)
 		records++;
 		key = live_key(record.hash, record.stage);
 		if (bsearch(&key, keys, key_count, sizeof(*keys), hash_compare))
+		{
 			kept++;
+			kept_bytes += (uint32_t)sizeof(record) + record.size;
+		}
 		offset += (uint32_t)sizeof(record) + record.size;
 	}
 	if (records - kept <= DKSH_PRUNE_LEAST || (records - kept) * 4 <= records)
@@ -484,6 +489,44 @@ static int pack_prune(long *length, const unsigned char *whole)
 		free(keys);
 		return 0;
 	}
+	/* From the pack read whole, the new one is made in memory and written at once: copying it a record at a time,
+	a seek and two reads of the card for each, made pruning a pack of 19528 take 30 s (the first loading screen
+	gave up waiting for it) */
+	{
+		struct dksh_pack_header header = { DKSH_PACK_MAGIC, DKSH_PACK_VERSION };
+		unsigned char *made = whole ? malloc(sizeof(header) + kept_bytes) : NULL;
+
+		if (made)
+		{
+			uint32_t written = sizeof(header);
+
+			memcpy(made, &header, sizeof(header));
+			offset = sizeof(header);
+			while ((long)offset + (long)sizeof(struct dksh_pack_record) <= *length)
+			{
+				struct dksh_pack_record record;
+				uint64_t key;
+
+				memcpy(&record, whole + offset, sizeof(record));
+				if (record.magic != DKSH_RECORD_MAGIC || record.stage > 1 || !record.size ||
+					record.size > DKSH_RECORD_LIMIT || (long)offset + (long)sizeof(record) + (long)record.size > *length)
+				{
+					break;
+				}
+				key = live_key(record.hash, record.stage);
+				if (bsearch(&key, keys, key_count, sizeof(*keys), hash_compare) &&
+					written + sizeof(record) + record.size <= sizeof(header) + kept_bytes)
+				{
+					memcpy(made + written, whole + offset, sizeof(record) + record.size);
+					written += (uint32_t)sizeof(record) + record.size;
+				}
+				offset += (uint32_t)sizeof(record) + record.size;
+			}
+			ok = fwrite(made, 1, written, pruned) == written;
+			free(made);
+		}
+	}
+	if (!whole || ftell(pruned) == 0)
 	{
 		struct dksh_pack_header header = { DKSH_PACK_MAGIC, DKSH_PACK_VERSION };
 		unsigned char *data = malloc(DKSH_RECORD_LIMIT);
@@ -622,6 +665,7 @@ static void pack_open_locked(unsigned long *packed)
 	long length;
 	uint32_t offset;
 	unsigned char *whole;
+	u64 started_ns;
 
 	pack_path(path, sizeof(path));
 	dksh.pack = fopen(path, "r+b");
@@ -649,9 +693,11 @@ static void pack_open_locked(unsigned long *packed)
 	length = ftell(dksh.pack);
 	whole = pack_read_whole(length);
 	/* (the shaders the last run did not ask for left out: pack_prune) */
+	started_ns = armTicksToNs(armGetSystemTick());
 	if (pack_prune(&length, whole))
 	{
 		dksh.pack_pruned = 1;
+		dksh.pruned_ms = (unsigned long)((armTicksToNs(armGetSystemTick()) - started_ns) / 1000000);
 		free(whole);
 		whole = dksh.pack ? pack_read_whole(length) : NULL;
 	}
@@ -820,7 +866,8 @@ static void cache_scan(void)
 	host_logf(HOST_LOG_INFO, "dk shader: %lu shaders on the card in %s", listed, folder);
 	if (dksh.pack_pruned)
 		host_logf(HOST_LOG_INFO, "dk shader: the pack held %lu shaders, %lu of them asked for by the last run; the "
-			"rest (earlier versions of the generators) are left out", dksh.pruned_from, dksh.pruned_to);
+			"rest (earlier versions of the generators) are left out (%lu ms)", dksh.pruned_from, dksh.pruned_to,
+			dksh.pruned_ms);
 	if (dksh.said_set_full)
 		host_logf(HOST_LOG_ERROR, "dk shader: more than %u shaders on the card; the rest are not listed, and no more "
 			"are kept (delete %s to start the cache again)", (unsigned)DKSH_SET_FILL, folder);
