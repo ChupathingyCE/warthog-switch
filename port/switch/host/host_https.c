@@ -17,6 +17,12 @@ fetch does not depend on which roots this console's firmware carries: ISRG
 Root X1 and X2 (halo.milenko.org, GitHub's release assets, through Let's
 Encrypt's cross-signed intermediates) and USERTrust ECC and RSA (github.com,
 through Sectigo).
+
+Every answer's Date header is kept with this console's clock at the time
+(host_https_clock_offset): the servers' clocks are right, and this one may
+not be - consoles that never reach Nintendo never set theirs - which internet
+play's server browser needs (host_update.c says so to the player, and the
+game is told: host_main.c).
 */
 
 #include "host.h"
@@ -29,6 +35,7 @@ through Sectigo).
 #include <strings.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <switch.h>
@@ -217,6 +224,56 @@ static int header_value(const char *headers, const char *end, const char *name, 
 	return 0;
 }
 
+/* how far the servers' clock is ahead of this console's, in seconds, from
+the last answer that had a Date */
+static int clock_known;
+static long long clock_offset;
+
+/* a month's name (Date's, RFC 9110's IMF-fixdate), 0 to 11, or -1 */
+static int month_index(const char *name)
+{
+	static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+	int index;
+
+	for (index = 0; index < 12; index++)
+	{
+		if (!strncmp(name, months + 3 * index, 3))
+			return index;
+	}
+	return -1;
+}
+
+/* "Thu, 23 Oct 2026 04:19:03 GMT" as seconds since 1970 (the days from the
+civil date, as Howard Hinnant's days_from_civil), 0 if it is not one */
+static int date_seconds(const char *text, long long *seconds)
+{
+	char month_name[4];
+	int day, year, hour, minute, second, month;
+	long long days, era, of_era, of_year;
+
+	if (sscanf(text, "%*3s, %d %3s %d %d:%d:%d GMT", &day, month_name, &year, &hour, &minute, &second) != 6)
+		return 0;
+	month = month_index(month_name);
+	if (month < 0 || day < 1 || day > 31 || year < 1970 || hour > 23 || minute > 59 || second > 60)
+		return 0;
+	month++;
+	if (month <= 2)
+		year--;
+	era = year / 400;
+	of_era = year - era * 400;
+	of_year = (153 * (month > 2 ? month - 3 : month + 9) + 2) / 5 + day - 1;
+	days = era * 146097 + (of_era * 365 + of_era / 4 - of_era / 100 + of_year) - 719468;
+	*seconds = days * 86400 + hour * 3600 + minute * 60 + second;
+	return 1;
+}
+
+int host_https_clock_offset(long long *seconds)
+{
+	if (clock_known)
+		*seconds = clock_offset;
+	return clock_known;
+}
+
 /* one GET of path on host: the status, the redirect's target if there is
 one, and on 200 the body to body(). -1 if it could not be asked. */
 static int request(const char *host, const char *path, host_https_body body, void *context, char *location,
@@ -331,6 +388,16 @@ static int request(const char *host, const char *path, host_https_body body, voi
 			goto done;
 		}
 		status = atoi(buffer + 9);
+		if (header_value(buffer, end, "Date", value, sizeof(value)))
+		{
+			long long server_time;
+
+			if (date_seconds(value, &server_time))
+			{
+				clock_offset = server_time - (long long)time(NULL);
+				clock_known = 1;
+			}
+		}
 		if (location_size)
 			header_value(buffer, end, "Location", location, location_size);
 		if (header_value(buffer, end, "Content-Length", value, sizeof(value)))

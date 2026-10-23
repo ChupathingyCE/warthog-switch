@@ -45,6 +45,13 @@ game starts, so its shader cache reads it at its first pass. The guest merges
 it with the console's own console.dkk as it reads them (a key both have is
 one). Without a network, or with neither file on main, the keys the console
 has are kept.
+
+GitHub's answers say the time (host_https_clock_offset), and a console whose
+clock is off by more than CLOCK_TOLERANCE is told to set it: internet play's
+server browser takes a game's listing only if its time is near this
+console's (port/linux/src/p2p_lobby.c), so on a wrong clock it lists no game.
+Builds without a number, which look for no release, still ask GitHub the
+time; update.auto off asks nothing.
 */
 
 #include "host.h"
@@ -54,6 +61,7 @@ has are kept.
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <time.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -102,6 +110,9 @@ enum
 	REQUIRED_FILES = 2,
 	MENU_FILE = WANTED_FILES,
 	PROGRESS_EVERY = 512 * 1024,
+	/* seconds: a clock off by more is wrong (p2p_lobby.c's RETAINED_WINDOW;
+	a live listing is taken within an hour, its retained copy within this) */
+	CLOCK_TOLERANCE = 600,
 };
 
 static PadState *menu_pad;
@@ -858,22 +869,88 @@ static void keys_refresh(void)
 
 /* the release's check, and its offer */
 static void release_offer(void);
+static void clock_check(void);
 
 void host_update_offer(void *pad)
 {
 	menu_pad = pad;
-	if (HALO_BUILD_NUMBER <= 0)
-	{
-		host_logf(HOST_LOG_INFO, "update: this build has no number, so it does not look for updates");
-		return;
-	}
 	if (!automatic_updates())
 	{
 		host_logf(HOST_LOG_INFO, "update: update.auto is off in config.toml");
 		return;
 	}
-	release_offer();
-	keys_refresh();
+	if (HALO_BUILD_NUMBER <= 0)
+		host_logf(HOST_LOG_INFO, "update: this build has no number, so it does not look for updates");
+	else
+	{
+		release_offer();
+		keys_refresh();
+	}
+	clock_check();
+}
+
+/* "3 h 12 min", "25 min" */
+static void duration_text(long long seconds, char *text, size_t size)
+{
+	long long minutes = (seconds + 30) / 60;
+
+	if (minutes >= 48 * 60)
+		snprintf(text, size, "%lld days", (minutes + 12 * 60) / (24 * 60));
+	else if (minutes >= 60)
+		snprintf(text, size, "%lld h %lld min", minutes / 60, minutes % 60);
+	else
+		snprintf(text, size, "%lld min", minutes);
+}
+
+/* the console's clock against GitHub's: the player told to set it if it is
+wrong (GitHub asked here if the release's check did not) */
+static void clock_check(void)
+{
+	long long offset;
+	char error[256], location[HOST_HTTPS_MAXIMUM_URL];
+	char message[512], duration[32], console_text[32], real_text[32];
+	time_t now, real;
+	struct tm console_time, real_time;
+
+	if (!host_https_clock_offset(&offset))
+	{
+		host_https_get("https://github.com/" UPDATE_REPOSITORY "/releases/latest", 0, NULL, NULL, location,
+			sizeof(location), error, sizeof(error));
+		if (!host_https_clock_offset(&offset))
+		{
+			host_logf(HOST_LOG_INFO, "clock: GitHub's time could not be learned; the console's clock is not checked");
+			return;
+		}
+	}
+	duration_text(offset < 0 ? -offset : offset, duration, sizeof(duration));
+	if (offset <= CLOCK_TOLERANCE && offset >= -CLOCK_TOLERANCE)
+	{
+		host_logf(HOST_LOG_INFO, "clock: the console's clock is right (%lld s from GitHub's)", -offset);
+		return;
+	}
+	host_logf(HOST_LOG_WARN, "clock: the console's clock is %s %s GitHub's (%lld s)", duration,
+		offset < 0 ? "ahead of" : "behind", -offset);
+	now = time(NULL);
+	real = (time_t)(now + offset);
+	localtime_r(&now, &console_time);
+	localtime_r(&real, &real_time);
+	/* (the date too, if they are not the same day) */
+	if (console_time.tm_yday != real_time.tm_yday || console_time.tm_year != real_time.tm_year)
+	{
+		strftime(console_text, sizeof(console_text), "%H:%M on %d %b %Y", &console_time);
+		strftime(real_text, sizeof(real_text), "%H:%M on %d %b %Y", &real_time);
+	}
+	else
+	{
+		strftime(console_text, sizeof(console_text), "%H:%M", &console_time);
+		strftime(real_text, sizeof(real_text), "%H:%M", &real_time);
+	}
+	snprintf(message, sizeof(message),
+		"This console's clock says %s, but it is %s: the clock is %s %s. While the clock is wrong, the server browser "
+		"shows no internet games. Set the time in System Settings, System, Date and Time, or turn on "
+		"Synchronise Clock via Internet.", console_text, real_text, duration, offset < 0 ? "ahead" : "behind");
+	host_ui_message("THE CLOCK IS WRONG", message, (const char *const[]){ "A", "Continue", NULL });
+	wait_for(HidNpadButton_A);
 }
 
 static void release_offer(void)
