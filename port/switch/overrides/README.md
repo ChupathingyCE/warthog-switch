@@ -31,5 +31,5 @@ emptied ("the lights were out of order and all of them were let go"): no
 flashlight, headlights or plasma glow.
 
 - Base: upstream `d547dd7c` (the submodule's pin).
-- Upstream: the commit `86735cd0` on branch `window-data-arrays` of
-  `thelinkin3000/chupathingyce`; its pull request is still to be opened.
+- Upstream: ChupathingyCE/chupathingyce#441 (commit `6833dbd4` on branch
+  `window-data-arrays` of `thelinkin3000/chupathingyce`).
