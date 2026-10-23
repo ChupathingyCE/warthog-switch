@@ -684,6 +684,39 @@ int posix_socket_sendto(int socket, const void *buffer, int length, int flags,
 	return succeed(result);
 }
 
+/* the receives that reach the socket service (each an IPC; a batched datagram does not), counted and said every 5 s
+while there are any: how many, how many found nothing, and the bytes, for the game thread's time in them */
+static struct
+{
+	unsigned calls, empty;
+	unsigned long long bytes;
+	uint64_t since;
+} receives;
+
+static void receive_counted(int result)
+{
+	struct timespec now;
+	uint64_t now_ms;
+
+	receives.calls++;
+	if (result < 0)
+		receives.empty++;
+	else
+		receives.bytes += (unsigned)result;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	now_ms = (uint64_t)now.tv_sec * 1000 + (uint64_t)now.tv_nsec / 1000000;
+	if (!receives.since)
+		receives.since = now_ms;
+	else if (now_ms - receives.since >= 5000)
+	{
+		host_logf(HOST_LOG_INFO, "sockets: %u receives in %.1f s (%u found nothing), %llu KB", receives.calls,
+			(double)(now_ms - receives.since) / 1000.0, receives.empty, receives.bytes / 1024);
+		receives.calls = receives.empty = 0;
+		receives.bytes = 0;
+		receives.since = now_ms;
+	}
+}
+
 int posix_socket_recv(int socket, void *buffer, int length, int flags)
 {
 	int truncated = 0;
@@ -702,7 +735,9 @@ int posix_socket_recv(int socket, void *buffer, int length, int flags)
 		}
 		return succeed(result);
 	}
-	return succeed((int)recv(socket, buffer, (size_t)length, flags));
+	result = (int)recv(socket, buffer, (size_t)length, flags);
+	receive_counted(result);
+	return succeed(result);
 }
 
 int posix_socket_recvfrom(int socket, void *buffer, int length, int flags,
@@ -741,6 +776,7 @@ int posix_socket_recvfrom(int socket, void *buffer, int length, int flags,
 	message.msg_iov = &vector;
 	message.msg_iovlen = 1;
 	result = (int)recvmsg(socket, &message, flags);
+	receive_counted(result);
 	if (result >= 0 && address && address_length)
 		address_out(&converted, message.msg_namelen, address, address_length);
 	/* a datagram larger than the buffer: both give its start, but Winsock
