@@ -514,11 +514,41 @@ static int watch_start(void)
 	return 1;
 }
 
-/* a read of the socket that can be answered as empty without asking (it is watched, and not seen readable since) */
+/* the socket is watched and not seen readable since (a select may be answered so) */
+static int watch_knows_empty(int socket)
+{
+	return socket >= 0 && socket < BATCHED_SOCKETS && __atomic_load_n(&socket_empty[socket], __ATOMIC_ACQUIRE);
+}
+
+/* a read of the socket that can be answered as empty without asking (a non-blocking socket's, watched and not seen
+readable since; a blocking one's read waits, as it would have) */
 static int watch_says_empty(int socket, int flags)
 {
-	return !flags && socket >= 0 && socket < BATCHED_SOCKETS &&
-		__atomic_load_n(&socket_empty[socket], __ATOMIC_ACQUIRE);
+	return !flags && watch_knows_empty(socket) && __atomic_load_n(&socket_watch_nonblocking[socket], __ATOMIC_RELAXED);
+}
+
+/* (under no lock) the socket watched from now on, if it is not: a read found it empty (only_nonblocking, a
+non-blocking socket's), or a select at once did */
+static void watch_add(int socket, int only_nonblocking)
+{
+	int woken = 0;
+
+	pthread_mutex_lock(&watch_lock);
+	if ((!only_nonblocking || socket_watch_nonblocking[socket]) && !socket_watched[socket] && watch_start())
+	{
+		socket_watched[socket] = 1;
+		__atomic_store_n(&socket_empty[socket], 1, __ATOMIC_RELEASE);
+		woken = 1;
+	}
+	pthread_mutex_unlock(&watch_lock);
+	if (woken)
+	{
+		unsigned char byte = 0;
+		int saved = errno;
+
+		send(watch_wake, &byte, 1, MSG_DONTWAIT);
+		errno = saved;
+	}
 }
 
 /* a read found the non-blocking socket empty: watched from now on */
@@ -1206,6 +1236,29 @@ int posix_socket_select(int *read, int *read_count, int *write, int *write_count
 		else
 			total += *counts[list];
 	}
+	/* (a look at once for reading only, at sockets all watched and seen empty: none ready, asking nothing - the
+	host's look at its machines' connections each frame) */
+	if (!infinite && milliseconds <= 0 && lists[0] && *counts[0] > 0 && total == *counts[0])
+	{
+		int empty = 1;
+
+		for (index = 0; index < *counts[0] && empty; index++)
+			empty = watch_knows_empty(lists[0][index]);
+		if (empty)
+		{
+			pthread_mutex_lock(&datagram_lock);
+			for (index = 0; index < *counts[0] && empty; index++)
+				empty = !datagrams_held(lists[0][index]);
+			pthread_mutex_unlock(&datagram_lock);
+		}
+		if (empty)
+		{
+			receives.answered++;
+			*counts[0] = 0;
+			last_error = 0;
+			return 0;
+		}
+	}
 	if (total > (int)(sizeof(stack) / sizeof(*stack)))
 	{
 		if (total > buffer_size)
@@ -1275,6 +1328,18 @@ int posix_socket_select(int *read, int *read_count, int *write, int *write_count
 	}
 	if (result < 0)
 		return fail();
+	/* (a look at once that found a socket not readable: watched from now on, for the next look) */
+	if (!infinite && milliseconds <= 0 && lists[0])
+	{
+		for (index = 0; index < *counts[0]; index++)
+		{
+			int descriptor = lists[0][index];
+
+			if (!(descriptors[index].revents & (POLLIN | POLLHUP | POLLERR)) && descriptor >= 0 &&
+				descriptor < BATCHED_SOCKETS && !__atomic_load_n(&socket_watched[descriptor], __ATOMIC_RELAXED))
+				watch_add(descriptor, 0);
+		}
+	}
 	result = 0;
 	total = 0;
 	for (list = 0; list < 3; list++)
