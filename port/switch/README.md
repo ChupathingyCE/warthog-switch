@@ -120,6 +120,22 @@ The game's own view of the console is that of a 1280x720 handheld or a
 game is told the width to render at. It resizes on its own if the console is
 docked or undocked while the game runs.
 
+### Overrides of the game's files
+
+A fix the Switch needs in the game itself waits on an upstream pull request
+to [ChupathingyCE/chupathingyce](https://github.com/ChupathingyCE/chupathingyce);
+until it is merged, the fixed file is kept whole in
+[`port/switch/overrides/`](overrides/README.md), laid out as the game is
+(`overrides/source/memory/data.c` for `source/memory/data.c`), and the build
+compiles it in the game file's place with the same flags, so the submodule
+stays at upstream's commit and the workflows need nothing.
+`overrides/README.md` lists each override, what it fixes and the pull request
+it waits on; `python3 tools/switch_overrides.py` lists them and `--diff`
+shows each one's change against the submodule's file. The Port tests
+workflow runs the tool, which fails when an override no longer differs from
+upstream's file (upstream has it: repin, delete the override and its entry)
+or when its game file is gone.
+
 ## Game data
 
 The game needs the `maps/` folder out of an Xbox disc image (`.xiso` or

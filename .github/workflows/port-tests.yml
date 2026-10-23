@@ -34,3 +34,7 @@ jobs:
           grep -q '^# Switch build: no devkitPro found' build.ninja
       - name: The port's Python compiles
         run: python3 -m py_compile port/switch/build.py tools/*.py
+      # (port/switch/overrides/README.md: each still differs from upstream's
+      # file, has one to stand in for, and is listed)
+      - name: The overrides of the game's files are still needed and listed
+        run: python3 tools/switch_overrides.py
