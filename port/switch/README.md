@@ -95,19 +95,22 @@ Homebrew Menu's FTP server.
 
 ### Releases and updates
 
-A release is made by pushing a tag `v<number>` on a commit of main
-(`git tag v1 && git push origin v1`): `.github/workflows/release.yml` builds
-the port in devkitPro's image, in both flavours, and publishes the GitHub
-release `build-<number>`, marked latest, with `halo-switch-release.zip` and
-`halo-switch-debug.zip`: the card's folder as `tools/switch_package.py` lays
-it out (the program, the game, `brokers.txt` and `menus/`), stored rather
-than deflated. A build with a number asks GitHub for the latest release
-before the game starts and offers it (`port/switch/host/host_update.c`): the
-program is replaced at once, the game image and the menu files at the next
-start. Builds made by hand have no number and never look, and
-`update.auto = false` in config.toml turns the look off. A release's number
-has to be higher than the last one's, which the installed builds compare
-theirs with.
+A release is made by pushing a tag `v<version>` on a commit of main
+(`git tag -a v0.8.0d-beta1 && git push origin v0.8.0d-beta1`; the tag's
+message becomes the release's notes): `.github/workflows/release.yml` builds
+the port in devkitPro's image, in both flavours, with the version from the
+tag and the build number from the workflow's run number, and publishes the
+GitHub release `build-<number>`, titled with the version and marked latest,
+with `halo-switch-release.zip` and `halo-switch-debug.zip`: the card's
+folder as `tools/switch_package.py` lays it out (the program, the game,
+`brokers.txt` and `menus/`), stored rather than deflated. A build with a
+number asks GitHub for the latest release before the game starts and offers
+it (`port/switch/host/host_update.c`): the program is replaced at once, the
+game image and the menu files at the next start. Builds made by hand have no
+number and never look, and `update.auto = false` in config.toml turns the
+look off. The installed builds compare their number with the latest
+release's, which is why the number is the run's and not the version: it only
+ever grows.
 
 The shared shader keys (`keys.dkk` and `keys.sha1` at the root of main) come
 the same way when the repository has them; this one does not yet.

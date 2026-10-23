@@ -1,16 +1,21 @@
 name: Release
 
-# A release of the Switch port for a pushed tag v<number> (git tag v1 &&
-# git push origin v1): the port is built in devkitPro's image, in both
-# flavours, and published as the GitHub release build-<number>, marked
-# latest, with halo-switch-release.zip and halo-switch-debug.zip. Each is
-# the card's folder as tools/switch_package.py lays it out (halo.nro,
-# halo_guest.elf, brokers.txt and menus/), stored and not deflated: the
-# updater in every build installed unpacks stored entries only
-# (port/switch/host/host_update.c). The release is named build-<number>, not
-# v<number>, because that is what the installed builds look for, and the
-# number has to be higher than the last release's, which they compare theirs
-# with. Only a tag on a commit of main is released; a manual run builds both
+# A release of the Switch port for a pushed tag v<version> (git tag -a
+# v0.8.0d-beta1 && git push origin v0.8.0d-beta1): the port is built in
+# devkitPro's image, in both flavours, and published as the GitHub release
+# build-<number>, marked latest, with halo-switch-release.zip and
+# halo-switch-debug.zip. Each is the card's folder as tools/switch_package.py
+# lays it out (halo.nro, halo_guest.elf, brokers.txt and menus/), stored and
+# not deflated: the updater in every build installed unpacks stored entries
+# only (port/switch/host/host_update.c).
+#
+# The tag names the version (0.8.0d-beta1, the game's HALO_VERSION), and the
+# number is this workflow's run number: the release is named build-<number>,
+# not v<version>, because that is what the installed builds look for, and
+# each has to be higher than the last release's, which they compare theirs
+# with; the run number only ever grows, and the version is the release's
+# title. The tag's own message, when it has one, is the release's notes.
+# Only a tag on a commit of main is released; a manual run builds both
 # flavours and releases nothing, to see that the build works.
 #
 # The Switch job is the reference's (halo-ce-universal's build.yml): two
@@ -107,25 +112,22 @@ jobs:
           key: ccache-switch-${{ matrix.flavor }}-${{ github.sha }}
           restore-keys: ccache-switch-${{ matrix.flavor }}-
 
-      # A tag v<number> gives the build its number, which names its release
-      # (build-<number>) for the self-updater, and the game's version its
-      # suffix (tools/version.py: the game's VERSION, then -switch.<number>,
-      # the channel custom); a manual run's build has no number and never
-      # looks for updates.
+      # A tag v<version> gives the build its version (tools/version.py:
+      # HALO_VERSION, the channel custom) and the run's number its build
+      # number, which names its release (build-<number>) for the
+      # self-updater; a manual run's build has no number and never looks for
+      # updates.
       - name: Build
         env:
           CCACHE_DIR: ${{ github.workspace }}/.ccache
           CCACHE_BASEDIR: ${{ github.workspace }}
           CCACHE_MAXSIZE: 2G
         run: |
-          case "$GITHUB_REF_NAME" in
-            v[1-9]*)
-              number="${GITHUB_REF_NAME#v}"
-              if printf '%s' "$number" | grep -Eq '^[1-9][0-9]*$'; then
-                export HALO_BUILD_NUMBER="$number"
-                export HALO_VERSION="$(tr -d '[:space:]' < chupathingyce/VERSION)-switch.$number"
-                echo "build number $number, version $HALO_VERSION"
-              fi
+          case "$GITHUB_REF" in
+            refs/tags/v?*)
+              export HALO_BUILD_NUMBER="$GITHUB_RUN_NUMBER"
+              export HALO_VERSION="${GITHUB_REF_NAME#v}"
+              echo "build number $HALO_BUILD_NUMBER, version $HALO_VERSION"
               ;;
           esac
           release=
@@ -152,10 +154,11 @@ jobs:
           retention-days: 3
 
   release:
-    # The two builds as a release, tagged build-<number> for a pushed tag
-    # v<number>, and marked latest (every file keeps its name from release to
-    # release). Only for a v<number> tag on a commit of main, newer than the
-    # last release, and only when both flavours built.
+    # The two builds as a release, tagged build-<number> (the run's number)
+    # for a pushed tag v<version>, titled with the version and marked latest
+    # (every file keeps its name from release to release). Only for a tag on
+    # a commit of main, numbered higher than the last release, and only when
+    # both flavours built.
     needs: switch
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-24.04
@@ -173,30 +176,30 @@ jobs:
       - name: Check the tag
         id: tag
         run: |
-          version="$GITHUB_REF_NAME"
-          case "$version" in
-            v[0-9]*) number="${version#v}" ;;
-            *) number= ;;
-          esac
-          if ! printf '%s' "$number" | grep -Eq '^[1-9][0-9]*$'; then
-            echo "::error::the tag $version is not v<number> (v1, say): no release"
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          number="$GITHUB_RUN_NUMBER"
+          if [ -z "$version" ] || [ "$version" = "$tag" ]; then
+            echo "::error::the tag $tag is not v<version> (v0.8.0d-beta1, say): no release"
             exit 1
           fi
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::the tag $version is not on a commit of main: no release"
+            echo "::error::the tag $tag is not on a commit of main: no release"
             exit 1
           fi
           if gh release view "build-$number" > /dev/null 2>&1; then
-            echo "::error::build-$number is released already: tag a higher number"
+            echo "::error::build-$number is released already (this run was released before?)"
             exit 1
           fi
           last="$(gh release list --limit 100 --json tagName \
             --jq '[.[] | .tagName | select(startswith("build-")) | ltrimstr("build-") | tonumber] | max // 0')"
           if [ "$number" -le "$last" ]; then
-            echo "::error::the tag $version is not higher than the last release, build-$last: the installed builds would not update to it"
+            echo "::error::build $number is not higher than the last release, build-$last: the installed builds would not update to it"
             exit 1
           fi
+          echo "the tag $tag: version $version, build $number"
           echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -216,13 +219,18 @@ jobs:
       - name: Publish
         env:
           NUMBER: ${{ steps.tag.outputs.number }}
+          VERSION: ${{ steps.tag.outputs.version }}
           COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           tag="build-$NUMBER"
-          # the notes: the tagged commit's whole message, then where it came from
-          git log -1 --format=%B "$GITHUB_SHA" > notes.md
-          printf '\nCommit: %s\nBuild: %s\n\nThe release build is for playing; the debug build stops at the first failed assertion and logs it.\n' \
-            "$COMMIT_URL" "$RUN_URL" >> notes.md
+          # the notes: the tag's message if it is annotated, else the tagged
+          # commit's whole message, then where it came from
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            git log -1 --format=%B "$GITHUB_SHA" > notes.md
+          fi
+          printf '\nVersion: %s (build %s)\nCommit: %s\nBuild: %s\n\nThe release build is for playing; the debug build stops at the first failed assertion and logs it.\n' \
+            "$VERSION" "$NUMBER" "$COMMIT_URL" "$RUN_URL" >> notes.md
           gh release create "$tag" release/*.zip --target "$GITHUB_SHA" --latest \
-            --title "Build $NUMBER (${GITHUB_SHA:0:7})" --notes-file notes.md
+            --title "$VERSION (build $NUMBER)" --notes-file notes.md
