@@ -1,0 +1,34 @@
+# Host functions only the Switch's guest imports, beside port/android/host_imports.list
+# (defined in port/switch/host). tools/android_imports.py generates the stubs.
+
+# the deko3d renderer (port/switch/guest/d3d8_dk.c, port/switch/host/host_dk.c)
+host_dk_submit
+host_dk_retired
+# the loading screen's picture, copied as the guest hands it over (host_dk.c)
+host_dk_picture
+host_dk_idle
+host_dk_visibility
+# the deko3d renderer's shader cache (port/switch/guest/dk_shaders.c,
+# port/switch/host/host_dk_shaders.c). A 64-bit hash travels in one X
+# register on both sides, and glsl/state_out are guest addresses
+host_dk_shader_find
+host_dk_shader_compile
+host_dk_shader_known
+host_dk_shader_pending
+host_dk_shader_pending_urgent
+host_dk_shader_priority_lower
+host_dk_shader_loading
+host_dk_shader_load_first
+host_dk_shader_preload_done
+host_dk_shader_loose_loads
+# the controller's gyroscope (port/switch/host/host_sdl2.c). yaw and pitch are
+# guest addresses of the turn since the last call, in radians
+host_sdl_gamepad_gyro
+# commit the SD card after the guest writes config.toml (port/linux/src/port_config.c)
+host_storage_commit
+host_clock_cpu
+host_dk_output_height
+host_dk_gpu_frame_us
+# the high-res HUD's sheets, decoded by the host (port/switch/host/host_dk_hud.c):
+# png and tag are guest addresses
+host_dk_hud_ready

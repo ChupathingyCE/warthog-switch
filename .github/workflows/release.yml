@@ -1,0 +1,228 @@
+name: Release
+
+# A release of the Switch port for a pushed tag v<number> (git tag v1 &&
+# git push origin v1): the port is built in devkitPro's image, in both
+# flavours, and published as the GitHub release build-<number>, marked
+# latest, with halo-switch-release.zip and halo-switch-debug.zip. Each is
+# the card's folder as tools/switch_package.py lays it out (halo.nro,
+# halo_guest.elf, brokers.txt and menus/), stored and not deflated: the
+# updater in every build installed unpacks stored entries only
+# (port/switch/host/host_update.c). The release is named build-<number>, not
+# v<number>, because that is what the installed builds look for, and the
+# number has to be higher than the last release's, which they compare theirs
+# with. Only a tag on a commit of main is released; a manual run builds both
+# flavours and releases nothing, to see that the build works.
+#
+# The Switch job is the reference's (halo-ce-universal's build.yml): two
+# toolchains and neither can be replaced by the other. devkitA64 builds the
+# host, and the Android NDK builds the guest, which is ILP32 AArch64 (32-bit
+# pointers, because the Xbox data formats embed them) and so cannot be built
+# by devkitA64 at all. It runs in devkitPro's own image, which carries the
+# toolchain and the libraries the host links against (devkitPro's package
+# hosts answer 403 to a GitHub runner); the NDK comes from Google.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  switch:
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [release, debug]
+    runs-on: ubuntu-24.04
+    container: devkitpro/devkita64:latest
+    timeout-minutes: 90
+    env:
+      DEVKITPRO: /opt/devkitpro
+      DEVKITA64: /opt/devkitpro/devkitA64
+    steps:
+      # Prove the image has what the host links against, and say which is
+      # missing if it does not. Better a clear message now than a link error
+      # later that reads like a build problem.
+      - name: Check the toolchain
+        run: |
+          echo "--- /opt/devkitpro ---"
+          ls /opt/devkitpro
+          for library in libSDL2 libGLESv2 libEGL; do
+            if [ -f "/opt/devkitpro/portlibs/switch/lib/$library.a" ]; then
+              echo "found $library"
+            else
+              echo "::error::$library is not in the image; the host will not link without it"
+            fi
+          done
+          if [ -f /opt/devkitpro/libnx/lib/libdeko3d.a ]; then
+            echo "found libdeko3d"
+          else
+            echo "::error::libdeko3d is not in the image; the host will not link without it"
+          fi
+
+      # The guest needs the NDK, which the image does not carry and the
+      # runner's own SDK is not visible from inside a container. Android
+      # publishes the whole NDK as one archive, so it is fetched and pointed
+      # at with ANDROID_NDK_HOME, which is what configure.py reads. Its bin
+      # directory is not put on PATH: the build calls the NDK's tools by
+      # path, and the host's clang is the one below.
+      - name: Install the Android NDK
+        run: |
+          curl -fsSL -o ndk.zip https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
+          unzip -q ndk.zip -d /opt
+          rm ndk.zip
+          echo "ANDROID_NDK_HOME=/opt/android-ndk-r26d" >> "$GITHUB_ENV"
+
+      - name: Install the build tools
+        run: |
+          # The guest is compiled for arm64_32, which only recent clang knows
+          # well; Debian's clang emits indirect branches the ELF assembler
+          # will not take, so LLVM's own builds are used instead.
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key |
+            gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-22 main" \
+            > /etc/apt/sources.list.d/llvm.list
+          apt-get update
+          # (meson, bison, flex, mako and git: UAM, deko3d's shader compiler,
+          # fetched and built into the program for the deko3d renderer;
+          # without them the build leaves it out, and the program can compile
+          # no shader on the console)
+          apt-get install -y --no-install-recommends python3 ninja-build ccache clang-22 unzip curl zip gnupg \
+            meson bison flex python3-mako git
+          clang-22 --version | head -1
+          ln -sf /usr/bin/clang-22 /usr/local/bin/clang
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: true
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ccache
+          key: ccache-switch-${{ matrix.flavor }}-${{ github.sha }}
+          restore-keys: ccache-switch-${{ matrix.flavor }}-
+
+      # A tag v<number> gives the build its number, which names its release
+      # (build-<number>) for the self-updater, and the game's version its
+      # suffix (tools/version.py: the game's VERSION, then -switch.<number>,
+      # the channel custom); a manual run's build has no number and never
+      # looks for updates.
+      - name: Build
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_MAXSIZE: 2G
+        run: |
+          case "$GITHUB_REF_NAME" in
+            v[1-9]*)
+              number="${GITHUB_REF_NAME#v}"
+              if printf '%s' "$number" | grep -Eq '^[1-9][0-9]*$'; then
+                export HALO_BUILD_NUMBER="$number"
+                export HALO_VERSION="$(tr -d '[:space:]' < chupathingyce/VERSION)-switch.$number"
+                echo "build number $number, version $HALO_VERSION"
+              fi
+              ;;
+          esac
+          release=
+          if [ "${{ matrix.flavor }}" = release ]; then release=--release; fi
+          python3 chupathingyce/configure.py --console-port port/switch --compiler-launcher ccache $release
+          ninja switch
+          ccache --show-stats
+
+      # the card's folder (tools/switch_package.py), with the licence and the
+      # port's README beside the program; the updater passes over files it
+      # does not know
+      - name: Package
+        run: |
+          python3 tools/switch_package.py --out "dist/halo-switch-${{ matrix.flavor }}"
+          folder="dist/halo-switch-${{ matrix.flavor }}/switch/ChupaThingyCE"
+          cp LICENSE "$folder/LICENSE"
+          cp port/switch/README.md "$folder/README.md"
+          ls -lR "$folder"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: halo-switch-${{ matrix.flavor }}
+          path: dist/halo-switch-${{ matrix.flavor }}/switch/ChupaThingyCE
+          retention-days: 3
+
+  release:
+    # The two builds as a release, tagged build-<number> for a pushed tag
+    # v<number>, and marked latest (every file keeps its name from release to
+    # release). Only for a v<number> tag on a commit of main, newer than the
+    # last release, and only when both flavours built.
+    needs: switch
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag
+        id: tag
+        run: |
+          version="$GITHUB_REF_NAME"
+          case "$version" in
+            v[0-9]*) number="${version#v}" ;;
+            *) number= ;;
+          esac
+          if ! printf '%s' "$number" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "::error::the tag $version is not v<number> (v1, say): no release"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::the tag $version is not on a commit of main: no release"
+            exit 1
+          fi
+          if gh release view "build-$number" > /dev/null 2>&1; then
+            echo "::error::build-$number is released already: tag a higher number"
+            exit 1
+          fi
+          last="$(gh release list --limit 100 --json tagName \
+            --jq '[.[] | .tagName | select(startswith("build-")) | ltrimstr("build-") | tonumber] | max // 0')"
+          if [ "$number" -le "$last" ]; then
+            echo "::error::the tag $version is not higher than the last release, build-$last: the installed builds would not update to it"
+            exit 1
+          fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: halo-switch-*
+          path: artifacts
+
+      # stored, not deflated (zip -0): the updater unpacks stored entries only
+      - name: Package
+        run: |
+          mkdir release
+          for build in artifacts/*/; do
+            name="$(basename "$build")"
+            (cd "$build" && zip -0 -qr "$GITHUB_WORKSPACE/release/$name.zip" .)
+          done
+          ls -l release
+
+      - name: Publish
+        env:
+          NUMBER: ${{ steps.tag.outputs.number }}
+          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          tag="build-$NUMBER"
+          # the notes: the tagged commit's whole message, then where it came from
+          git log -1 --format=%B "$GITHUB_SHA" > notes.md
+          printf '\nCommit: %s\nBuild: %s\n\nThe release build is for playing; the debug build stops at the first failed assertion and logs it.\n' \
+            "$COMMIT_URL" "$RUN_URL" >> notes.md
+          gh release create "$tag" release/*.zip --target "$GITHUB_SHA" --latest \
+            --title "Build $NUMBER (${GITHUB_SHA:0:7})" --notes-file notes.md

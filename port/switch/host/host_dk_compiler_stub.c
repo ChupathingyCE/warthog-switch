@@ -1,0 +1,28 @@
+/*
+HOST_DK_COMPILER_STUB.C
+
+host_dk_compile_glsl for a build with no UAM (port/switch/build.py links
+this instead of host_dk_compiler.cpp when meson, bison, flex or mako is
+missing): it fails, and says so once, so the deko3d renderer still runs with
+the shaders already on the card and compiles nothing. The OpenGL renderer
+never asks for a shader and never depends on UAM.
+*/
+
+#include "host.h"
+
+int host_dk_compile_glsl(int fragment, const char *glsl, void **dksh, size_t *dksh_size)
+{
+	static int said;
+
+	(void)fragment;
+	(void)glsl;
+	*dksh = NULL;
+	*dksh_size = 0;
+	if (!said)
+	{
+		said = 1;
+		host_logf(HOST_LOG_ERROR, "no shader compiler in this build (it needs meson, bison, flex and mako); the "
+			"deko3d renderer will use only the shaders already on the card");
+	}
+	return 0;
+}
