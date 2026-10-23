@@ -100,6 +100,8 @@ GUEST_IMAGE_BASE = 0x3c000000
 # (ui_overlay.c draws with GL: port/switch/guest/ui_overlay_dk.c is its twin here)
 OPENGL_ONLY = {"d3d8_gl.c", "xbox_textures.c", "xgpu_post.c", "xgpu_shader_cache.c", "ui_overlay.c"}
 GUEST_HOST_ONLY = {"memory_watch.c"}  # replaced by guest_memory_watch.c
+# the overrides of the game's files already announced by this configure run
+_overrides_said: set = set()
 
 # this repository's tools, beside the port
 TOOLS_DIR = Path(os.path.relpath(Path(__file__).resolve().parents[2] / "tools"))
@@ -136,7 +138,8 @@ def devkitpro_dir(sln: Any) -> Optional[Path]:
 def configure_inputs(port: ConsolePort) -> List[Path]:
     """Files whose change must re-run configure.py."""
     game = port.game
-    return [port.path("host"), port.path("guest"), port.path("host_imports.list"), port.path("uam.patch"),
+    return [port.path("host"), port.path("guest"), port.path("overrides"), port.path("host_imports.list"),
+            port.path("uam.patch"),
             game / "port" / "android" / "guest" / "runtime", game / "port" / "android" / "host_imports.list",
             game / "port" / "linux" / "src", game / "port" / "linux" / "port.json",
             *(game / path for path in hud_configure_inputs()),
@@ -657,11 +660,33 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
         f"-iquote {_quote(port_game_dir)}",
         port.game_defines_and_includes(config, _quote), *libc_includes, f"-idirafter {_quote(xdk_include)}",
     ])
+    # The port's overrides of the game's files (port/switch/overrides, laid
+    # out as the game is: overrides/source/memory/data.c stands in for
+    # source/memory/data.c): each a fix the Switch needs in the game itself,
+    # kept as a whole copy until upstream has it, and compiled in the game
+    # file's place with its flags, so the submodule stays at upstream's
+    # commit. overrides/README.md says what each is for and where it is
+    # going; tools/switch_overrides.py lists and checks them.
+    overrides_dir = PORT_DIR / "overrides"
+    overrides_left = {path.relative_to(overrides_dir).as_posix() for path in overrides_dir.rglob("*.c")}
     for source in port.game_sources(config):
+        name = port.game_relative(source)
         cflags = game_cflags
-        if port.game_relative(source) in VARIADIC_PROTOTYPE_FILES:
+        if name in VARIADIC_PROTOTYPE_FILES:
             cflags += f" -include {ANDROID_DIR}/include/halo_android_variadic_prototypes.h"
+        if name in overrides_left:
+            overrides_left.remove(name)
+            # (said once: configure generates more than once)
+            if name not in _overrides_said:
+                _overrides_said.add(name)
+                print(f"Switch: {name} is built from the port's override, {overrides_dir / name} "
+                      f"(waiting on upstream: {overrides_dir / 'README.md'})")
+            objects.append(guest_object(overrides_dir / name, cflags, "overrides"))
+            continue
         objects.append(guest_object(source, cflags))
+    if overrides_left:
+        raise SystemExit(f"Switch: {', '.join(sorted(overrides_left))} in {overrides_dir} override no file of the "
+                         f"game's: upstream renamed or removed it, or the override is misplaced")
     for source in sorted(port_game_dir.glob("*.c")):
         objects.append(guest_object(source, game_cflags))
     # the dedicated server's director, with the game browser (server/), as
