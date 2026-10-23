@@ -225,7 +225,11 @@ jobs:
         run: |
           tag="build-$NUMBER"
           # the notes: the tag's message if it is annotated, else the tagged
-          # commit's whole message, then where it came from
+          # commit's whole message, then where it came from. The checkout
+          # fetched the tag as the commit it points at (actions/checkout
+          # fetches github.sha under the tag's name), so the tag object is
+          # fetched again to read its message.
+          git fetch --force --quiet origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
           if ! grep -q '[^[:space:]]' notes.md; then
             git log -1 --format=%B "$GITHUB_SHA" > notes.md
