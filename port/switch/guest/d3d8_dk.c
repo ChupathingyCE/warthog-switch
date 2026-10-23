@@ -70,7 +70,7 @@ static float screen_scale[2] = { 1.0f, 1.0f };
 static long ui_offset;
 #define UI_OFFSET ((GLint)ui_offset)
 
-#ifdef HALO_SWITCH
+#ifdef HALO_SWITCH_CONSOLE
 /* the host's (host_dk.c): the height it presents at, 1080 docked and 720 in
 handheld */
 unsigned int host_dk_output_height(void);
@@ -184,7 +184,7 @@ static void screen_mode_choose(long *width, float scale[2])
 		*width = 1600;
 	*width &= ~1L;
 	scale[0] = scale[1] = 1.0f;
-#ifdef HALO_SWITCH
+#ifdef HALO_SWITCH_CONSOLE
 	/* display.resolution_limit: the lines the screen's targets are drawn at,
 	"480" (the game's own), "720", "900", "1080" or any number of lines
 	between, no more than the host presents at (1080 docked, 720 in handheld),
