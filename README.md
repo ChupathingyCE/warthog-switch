@@ -32,6 +32,18 @@ submodule, and the shared code's console hooks live there.
 You need your own copy of Halo. No game files are included, and nothing from
 Nintendo's SDK: the port is built with devkitPro's free tools.
 
+> [!TIP]
+> **Cheats and settings from an overlay.** With an
+> [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
+> package for this game, you can turn on cheats (god mode, infinite ammo,
+> super jump and more), revert to the last checkpoint, and change VSync,
+> interpolation and the frame-rate display without leaving the game. The
+> game takes the package's commands from `/switch/.packages/halo/overlay`
+> when that folder is there at its start, and names itself to the package as
+> `game/ChupaThingyCE.flag`; hardran3's
+> [OpenCE-Ultrahand](https://github.com/hardran3/OpenCE-Ultrahand) package
+> is the model, looking for OpenCE's flag. Beta 5 or later.
+
 ## Status
 
 **Working: boots and plays on Switch hardware (October 2026).** The port is

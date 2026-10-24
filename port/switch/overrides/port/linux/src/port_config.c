@@ -564,6 +564,17 @@ static const struct config_setting config_settings[] =
 		"pairs separated by commas (\"jump=B,melee=RB\"). Empty: the default." },
 #endif
 
+#ifdef HALO_SWITCH_CONSOLE
+	{ "game.overlay_commands", _config_boolean, "true", "HALO_OVERLAY_COMMANDS", _environment_value, _platform_all,
+		"Take commands from /switch/.packages/halo/overlay/command.txt, once a\n"
+		"second: a console command (cheat_deathless_player true, map_name a10)\n"
+		"or config <setting> <value>, run and the file deleted; result.txt\n"
+		"beside it says what came of it, and the folder's flags has an empty\n"
+		"file for each true/false command that is on (cheat_infinite_ammo,\n"
+		"display.vsync). For an Ultrahand overlay to control the game, and\n"
+		"only with its package installed (that overlay folder there when the\n"
+		"game starts). Changes at once." },
+#endif
 	{ "game.console_log", _config_string, "\"important\"", "HALO_CONSOLE_LOG", _environment_value, _platform_all | _platform_xbox,
 		"What the console shows on screen: \"important\", \"all\" or \"none\".\n"
 		"debug.txt has every line." },
@@ -3253,6 +3264,84 @@ int config_write_boolean(const char *name, int value)
 	long index = config_setting_index(name);
 
 	return index >= 0 && config_settings[index].type == _config_boolean && config_write(name, value ? "true" : "false");
+}
+
+/* the index'th setting, if it is a boolean this platform has: 1 with its name and value, 0 for one that is not, -1
+past the last (the Switch's overlay flags: port/linux/game/overlay_commands.c) */
+int config_boolean_setting(unsigned index, const char **name, int *value)
+{
+	if (index >= NUMBER_OF_CONFIG_SETTINGS)
+		return -1;
+	if (config_settings[index].type != _config_boolean || !(config_settings[index].platforms & CONFIG_PLATFORM))
+		return 0;
+	*name = config_settings[index].name;
+	*value = config_boolean(*name);
+	return 1;
+}
+
+/* sets a setting as config_write does, from its value as config.toml writes it ("true", "4096", "1.5", "\"900\"": a
+string in double quotes, or bare); 0, with why in error, for no such setting or a value not of its type (the overlay's
+commands: port/linux/game/overlay_commands.c) */
+int config_set_text(const char *name, const char *value, char *error, size_t error_size)
+{
+	long index = config_setting_index(name);
+	char text[260];
+	size_t length = strlen(value);
+	char *end = NULL;
+
+	if (index < 0)
+	{
+		snprintf(error, error_size, "no such setting: %s", name);
+		return 0;
+	}
+	if (length >= sizeof(text))
+	{
+		snprintf(error, error_size, "the value is too long");
+		return 0;
+	}
+	/* (a TOML string's quotes taken off; the escapes it may have are not written by the game's own file) */
+	if (length >= 2 && value[0] == '"' && value[length - 1] == '"')
+		snprintf(text, sizeof(text), "%.*s", (int)(length - 2), value + 1);
+	else
+		snprintf(text, sizeof(text), "%s", value);
+	switch (config_settings[index].type)
+	{
+	case _config_boolean:
+		if (!strcmp(text, "on") || !strcmp(text, "1"))
+			snprintf(text, sizeof(text), "true");
+		else if (!strcmp(text, "off") || !strcmp(text, "0"))
+			snprintf(text, sizeof(text), "false");
+		if (strcmp(text, "true") && strcmp(text, "false"))
+		{
+			snprintf(error, error_size, "%s is true or false, not %s", name, value);
+			return 0;
+		}
+		break;
+	case _config_integer:
+		(void)strtol(text, &end, 10);
+		if (!*text || *end)
+		{
+			snprintf(error, error_size, "%s is a whole number, not %s", name, value);
+			return 0;
+		}
+		break;
+	case _config_real:
+		(void)strtod(text, &end);
+		if (!*text || *end)
+		{
+			snprintf(error, error_size, "%s is a number, not %s", name, value);
+			return 0;
+		}
+		break;
+	case _config_string:
+		break;
+	}
+	if (!config_write(name, text))
+	{
+		snprintf(error, error_size, "%s could not be saved to config.toml", name);
+		return 0;
+	}
+	return 1;
 }
 
 /* a setting's value as text ("true", "60", "1.5", "all"): 0 if there is no

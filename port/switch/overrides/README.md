@@ -9,7 +9,9 @@ and finds a `.h` override before the game's header (the overrides' directories
 come first on the include path), so the submodule stays at upstream's commit
 and the workflows need nothing. The game's own sources (`source/`) and the
 platform layer it shares with the desktop (`port/linux/src/`) can both be
-overridden.
+overridden, and a `.c` under `port/linux/game/` that the game has no file for
+is an addition: a game unit of the port's own, compiled with the game's units
+until upstream takes it.
 
 `python3 tools/switch_overrides.py` lists the overrides; `--diff` shows each
 one's change against the submodule's file. The Port tests workflow runs it,
@@ -142,14 +144,58 @@ behind the Sentinels' beams for a storage the GPU is still reading.
 - Base: upstream `3705fa1a`.
 - Upstream: ChupathingyCE/chupathingyce#457.
 
+## port/linux/game/overlay_commands.c
+
+An addition: commands from outside the game through a file, for an Ultrahand
+overlay on the Switch. Once a second the game looks for `command.txt` in the
+overlay package's folder (`/switch/.packages/halo/overlay`), takes it (the
+file is deleted) and runs it: a console command as typed at the console
+(cheats, `map_name`, `game_revert`), or `config <setting> <value>`, which sets
+and saves a setting as the menus do. `result.txt` beside it says what came of
+it. Each boolean the commands can set, a console global or a setting, has an
+empty `flags/<name>.flag` while it is true (`show_hud`'s is `hud.flag`), and
+`game/ChupaThingyCE.flag` names the game the package is talking to. Only when
+the package's folder is there at the start; then the main menu says the
+overlay is present, and the package's `game` and `flags` folders are emptied
+or made for the run. `game.overlay_commands` turns the look off.
+
+- From the Switch port's reference implementation (2026-10-24), with the
+  game's flag named for ChupaThingyCE.
+- Needs: `source/main/main.c` (the call), `port/linux/src/port_config.c` and
+  `.h` (the setting, `config_set_text`, `config_boolean_setting`),
+  `port/linux/src/msvc_crt.c` (the host-path file helpers), below; and in the
+  host, a folder removed through `unlinkat` with `AT_REMOVEDIR`
+  (`port/switch/host/host_syscall.c`, the port's own).
+- Upstream: pull request to be opened, if wanted there.
+
+## source/main/main.c
+
+The call of `overlay_commands_update` after `telnet_console_process` in both
+main loops (the pregame's and the game's), and its prototype. For
+`port/linux/game/overlay_commands.c`.
+
+## port/linux/src/port_config.h
+
+The prototypes of `config_set_text` and `config_boolean_setting`, for
+`port/linux/game/overlay_commands.c`.
+
+## port/linux/src/msvc_crt.c
+
+`platform_fopen_host`, `platform_remove_host` and
+`platform_remove_directory_host`: a file by the host's own path, untranslated,
+opened, removed, and an empty folder removed, for
+`port/linux/game/overlay_commands.c`.
+
 ## port/linux/src/port_config.c
 
 The settings table, with the rows the other overrides read:
 `display.dynamic_light_limit` (8) and `display.specular_light_limit` (2) for
 `source/objects/object_lights.c`; `display.particle_limit` (2048 under
 `HALO_SWITCH_CONSOLE`, 4096 elsewhere) and `debug.original_particles` for
-`source/effects/particles.c`. Each row goes upstream with the override that
-reads it.
+`source/effects/particles.c`; `game.overlay_commands` (under
+`HALO_SWITCH_CONSOLE`), with `config_set_text` and `config_boolean_setting`,
+for `port/linux/game/overlay_commands.c`. Each row goes upstream with the
+override that reads it.
 
 - Base: upstream `3705fa1a`.
 
