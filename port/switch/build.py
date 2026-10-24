@@ -700,7 +700,9 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             cflags += f" -include {ANDROID_DIR}/include/halo_android_variadic_prototypes.h"
         override = override_of(source, name)
         if override:
-            objects.append(guest_object(override, cflags, "overrides"))
+            # (its "x.h" includes find the game's own directory, as the game
+            # file's would; an override header beside it still comes first)
+            objects.append(guest_object(override, f"{cflags} -iquote {_quote(source.parent)}", "overrides"))
             continue
         objects.append(guest_object(source, cflags))
     for source in sorted(port_game_dir.glob("*.c")):
@@ -738,7 +740,7 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             continue
         override = override_of(source, f"port/linux/src/{source.name}")
         if override:
-            objects.append(guest_object(override, platform_cflags, "overrides"))
+            objects.append(guest_object(override, f"{platform_cflags} -iquote {_quote(source.parent)}", "overrides"))
             continue
         objects.append(guest_object(source, platform_cflags))
     for source in embedded_sources:
