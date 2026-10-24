@@ -131,6 +131,15 @@ at most 5 ms of mixing (2.7 ms of the Switch's game thread per call before).
 - Base: upstream `3705fa1a`.
 - Upstream: pull request to be opened.
 
+## port/linux/src/d3d8_resources.c
+
+Dynamic vertex buffers get up to 16 storages, so a frame no longer waits
+behind the Sentinels' beams for a storage the GPU is still reading.
+
+- From halo-ce-universal bd0da7c99 (2026-10-20).
+- Base: upstream `3705fa1a`.
+- Upstream: pull request to be opened.
+
 ## port/linux/src/port_config.c
 
 The settings table, with the rows the other overrides read:
