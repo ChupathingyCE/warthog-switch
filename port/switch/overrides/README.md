@@ -45,6 +45,23 @@ or made for the run. `game.overlay_commands` turns the look off.
   (`port/switch/host/host_syscall.c`, the port's own).
 - Upstream: pull request to be opened, if wanted there.
 
+## source/interface/terminal.c
+
+Where the game's messages (the terminal's output lines, at the bottom left:
+the notices, what the console's commands print) are drawn, as the setting
+`game.terminal_output` says when `terminal_render` is 2, its default: upstream
+draws them only while the console is open, and the Switch cannot open its
+console, so no message ever showed there, the overlay's "Ultrahand Overlay
+present and enabled" among them. "menus" draws them in the main menu too,
+the default under `HALO_SWITCH_CONSOLE`; "console" is upstream's behaviour and
+the default elsewhere; "none" and "always" as they say. The reference's rule,
+on upstream's `terminal_render` values.
+
+- Base: upstream `f5abeb99`.
+- Upstream: pull request to be opened (the setting with its "console"
+  default changes nothing on the desktop; a console build could turn
+  "menus" on through a capability of `halo_console_features.h`).
+
 ## source/main/main.c
 
 The call of `overlay_commands_update` after `telnet_console_process` in both
@@ -74,7 +91,8 @@ a warning the guest's `-w` hides), the game logs "no such setting" and reads
 0 for each, and the light limits, the particle limit and the once-a-tick
 particles stay off. And `game.overlay_commands` (under `HALO_SWITCH_CONSOLE`),
 with `config_set_text` and `config_boolean_setting`, for
-`port/linux/game/overlay_commands.c`.
+`port/linux/game/overlay_commands.c`; and `game.terminal_output`, for
+`source/interface/terminal.c`.
 
 - Base: upstream `f5abeb99`.
 - Upstream: ChupathingyCE/chupathingyce#458 (the rows); the overlay's part

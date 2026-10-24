@@ -579,6 +579,16 @@ static const struct config_setting config_settings[] =
 #endif
 
 #ifdef HALO_SWITCH_CONSOLE
+	{ "game.terminal_output", _config_string, "\"menus\"", "HALO_TERMINAL_OUTPUT", _environment_value, _platform_all,
+#else
+	{ "game.terminal_output", _config_string, "\"console\"", "HALO_TERMINAL_OUTPUT", _environment_value, _platform_all,
+#endif
+		"Where the game's messages at the bottom left of the screen (what the\n"
+		"console's commands print, the notices) are drawn when terminal_render\n"
+		"is 2, its default: \"none\"; \"console\", while the console is open,\n"
+		"the desktop's default; \"menus\", in the main menu too, the default on a\n"
+		"console, which cannot open its console; or \"always\". Changes at once." },
+#ifdef HALO_SWITCH_CONSOLE
 	{ "game.overlay_commands", _config_boolean, "true", "HALO_OVERLAY_COMMANDS", _environment_value, _platform_all,
 		"Take commands from /switch/.packages/halo/overlay/command.txt, once a\n"
 		"second: a console command (cheat_deathless_player true, map_name a10)\n"

@@ -347,7 +347,9 @@ to offer. Voice chat records from a headset in the console's jack
 
 An Ultrahand overlay talks to the game through files in its package's folder,
 `/switch/.packages/halo/overlay`, which must be there when the game starts
-(then the main menu says "Ultrahand Overlay present and enabled"):
+(then the main menu says "Ultrahand Overlay present and enabled", one of
+the game's messages, which `game.terminal_output` draws in the main menu on
+the Switch):
 
 - `command.txt`: one line, looked for once a second, taken (deleted) and run.
   Either a console command as typed at the console (`cheat_deathless_player
