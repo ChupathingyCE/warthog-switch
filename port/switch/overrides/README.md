@@ -36,12 +36,48 @@ how many there were and how many were let go.
 - Upstream: pull request to be opened (with the two settings in
   `port/linux/src/port_config.c`).
 
+## source/effects/particles.c
+
+Two things, one pull request's worth. `display.particle_limit`: the most
+particles (sparks, smoke, casings, debris) alive at once, 2048 on the Switch
+and 4096 elsewhere (the Xbox's pool was 1024, the port's is 8192); past it
+the oldest alive is let go for the new one, never the first-person weapon's.
+With 64 players in a small map the pool filled and the particles were 30% of
+the Switch's game thread. And the particles not attached to an object move,
+and cast their collision rays, once a 30 Hz tick as on the Xbox rather than
+at every frame drawn, and are drawn between their ticks by the time into the
+tick; one not drawn since the tick before moves once every 4 ticks by all it
+was owed. The rays were about a sixth of the game thread.
+`debug.original_particles` moves them each frame, as before. The log says
+every 10 s how many lived.
+
+- From halo-ce-universal adf076e79, 4f8ec94c9, ca43a1ec2, 04e4f58bc and
+  5bf2e32f5 (2026-10-23), with `source/effects/particles.h` (the prototype of
+  `particle_render_position`) and `source/render/render_particles.c` below.
+- Base: upstream `3705fa1a`.
+- Upstream: pull request to be opened (with the two settings in
+  `port/linux/src/port_config.c`).
+
+## source/effects/particles.h
+
+The prototype of `particle_render_position`, for `source/effects/particles.c`
+above and `source/render/render_particles.c` below. Goes with them.
+
+## source/render/render_particles.c
+
+The particles drawn where `particle_render_position` puts them between their
+ticks (`source/effects/particles.c` above), and the visible particles sorted
+by a stable radix sort on qsort's key rather than qsort, from halo-ce-universal
+7e5aecc29 (2026-10-23). Goes with particles.c.
+
 ## port/linux/src/port_config.c
 
-The settings table, with the rows the other overrides read: so far
+The settings table, with the rows the other overrides read:
 `display.dynamic_light_limit` (8) and `display.specular_light_limit` (2) for
-`source/objects/object_lights.c`. Each row goes upstream with the override
-that reads it.
+`source/objects/object_lights.c`; `display.particle_limit` (2048 under
+`HALO_SWITCH_CONSOLE`, 4096 elsewhere) and `debug.original_particles` for
+`source/effects/particles.c`. Each row goes upstream with the override that
+reads it.
 
 - Base: upstream `3705fa1a`.
 
