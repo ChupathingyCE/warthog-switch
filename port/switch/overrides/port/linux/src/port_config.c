@@ -234,19 +234,28 @@ static const struct config_setting config_settings[] =
 		"It costs the GPU some time. Takes effect the next start." },
 	{ "debug.gpu_fault_test", _config_boolean, "false", "HALO_GPU_FAULT_TEST", _environment_set_is_true,
 		_platform_android,
+#ifdef HALO_CONSOLE_LIGHT_LIMITS
 	{ "display.dynamic_light_limit", _config_integer, "8", "HALO_DYNAMIC_LIGHT_LIMIT", _environment_value, _platform_all,
+#else
+	{ "display.dynamic_light_limit", _config_integer, "0", "HALO_DYNAMIC_LIGHT_LIMIT", _environment_value, _platform_all,
+#endif
 		"The most dynamic lights (muzzle flashes, plasma, explosions) that light\n"
 		"the level at once: the biggest on the screen keep their light on the\n"
 		"walls and floor, the rest light only the objects near them. 0 for no\n"
 		"limit, as on the Xbox (each redraws the level it reaches twice: a\n"
-		"firefight of many is the most of a busy frame's GPU time). Changes at\n"
-		"once." },
+		"firefight of many is the most of a busy frame's GPU time): the\n"
+		"desktop's default; the consoles' is 8. Changes at once." },
+#ifdef HALO_CONSOLE_LIGHT_LIMITS
 	{ "display.specular_light_limit", _config_integer, "2", "HALO_SPECULAR_LIGHT_LIMIT", _environment_value, _platform_all,
+#else
+	{ "display.specular_light_limit", _config_integer, "0", "HALO_SPECULAR_LIGHT_LIMIT", _environment_value, _platform_all,
+#endif
 		"Of those, the most that add their specular highlights (the shine on\n"
 		"metal and wet floors): the biggest on the screen, the first-person\n"
 		"weapon's first. The others still light the level, without the shine.\n"
 		"0 for no limit, as on the Xbox (a near light's highlights cover most\n"
-		"of the screen: the costliest pass of a firefight). Changes at once." },
+		"of the screen: the costliest pass of a firefight): the desktop's\n"
+		"default; the consoles' is 2. Changes at once." },
 #ifdef HALO_SWITCH_CONSOLE
 	{ "display.particle_limit", _config_integer, "2048", "HALO_PARTICLE_LIMIT", _environment_value, _platform_all,
 #else
@@ -257,11 +266,16 @@ static const struct config_setting config_settings[] =
 		"1024. 0 for the port's own 8192 (a 64-player firefight fills them, and\n"
 		"every one costs the processor and the GPU: 2048 on the Switch, 4096\n"
 		"elsewhere). Changes at once." },
-	{ "debug.original_particles", _config_boolean, "false", "HALO_ORIGINAL_PARTICLES", _environment_value, _platform_all,
+#ifdef HALO_CONSOLE_PARTICLE_TICKS
+	{ "display.particle_ticks", _config_boolean, "true", "HALO_PARTICLE_TICKS", _environment_value, _platform_all,
+#else
+	{ "display.particle_ticks", _config_boolean, "false", "HALO_PARTICLE_TICKS", _environment_value, _platform_all,
+#endif
 		"Move the particles that are not attached to an object (sparks, casings,\n"
-		"debris) at every frame drawn, as before, rather than once a 30 Hz tick\n"
-		"as on the Xbox and drawn between their ticks (which spares the CPU two\n"
-		"in three of their collision tests at 60 frames a second, more at 120).\n"
+		"debris) once a 30 Hz tick, as on the Xbox, and draw them between their\n"
+		"ticks: two in three of their collision tests spared at 60 frames a\n"
+		"second, more at 120. false moves them at every frame drawn, smooth at\n"
+		"high refresh rates: the desktop's default; the consoles' is true.\n"
 		"Takes effect at the next map." },
 		"Make the GPU fault on purpose at the 1200th frame, to see gpu_trace's record.\n"
 		"Takes effect the next start." },

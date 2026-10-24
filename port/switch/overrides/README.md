@@ -27,7 +27,9 @@ Every override is listed here, with what it fixes and where it is going.
 dynamic lights on the screen (muzzle flashes, plasma bolts, explosions), the
 8 largest as seen from the camera light the level and the 2 largest add their
 specular highlights, the first-person weapon's own first; the rest still
-light the objects near them. Each dynamic light redraws the level's surfaces
+light the objects near them. The consoles' defaults (`HALO_CONSOLE_LIGHT_LIMITS`,
+which the port's build defines until upstream's features header does); the
+desktop defaults to 0, every light lit. Each dynamic light redraws the level's surfaces
 it reaches: in Chill Out with 64 players a frame's six lights took 11.3 ms of
 the Switch's GPU for their specular passes and 3.7 ms for their diffuse ones.
 0 is the Xbox's behaviour, every one rendered. The log says every 300 frames
@@ -50,8 +52,10 @@ and cast their collision rays, once a 30 Hz tick as on the Xbox rather than
 at every frame drawn, and are drawn between their ticks by the time into the
 tick; one not drawn since the tick before moves once every 4 ticks by all it
 was owed. The rays were about a sixth of the game thread.
-`debug.original_particles` moves them each frame, as before. The log says
-every 10 s how many lived.
+`display.particle_ticks`, on by default on the consoles
+(`HALO_CONSOLE_PARTICLE_TICKS`, which the port's build defines until upstream's
+features header does) and off on the desktop, which moves them each frame. The
+log says every 10 s how many lived.
 
 - From halo-ce-universal adf076e79, 4f8ec94c9, ca43a1ec2, 04e4f58bc and
   5bf2e32f5 (2026-10-23), with `source/effects/particles.h` (the prototype of
@@ -191,7 +195,7 @@ opened, removed, and an empty folder removed, for
 The settings table, with the rows the other overrides read:
 `display.dynamic_light_limit` (8) and `display.specular_light_limit` (2) for
 `source/objects/object_lights.c`; `display.particle_limit` (2048 under
-`HALO_SWITCH_CONSOLE`, 4096 elsewhere) and `debug.original_particles` for
+`HALO_SWITCH_CONSOLE`, 4096 elsewhere) and `display.particle_ticks` for
 `source/effects/particles.c`; `game.overlay_commands` (under
 `HALO_SWITCH_CONSOLE`), with `config_set_text` and `config_boolean_setting`,
 for `port/linux/game/overlay_commands.c`. Each row goes upstream with the
