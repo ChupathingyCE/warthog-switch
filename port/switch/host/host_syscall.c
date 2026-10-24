@@ -2086,6 +2086,11 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 	/* refused by the console, and said once already (host_mman.c) */
 	if (number == SYS_mprotect && result == -ENOTSUP)
 		return result;
+	/* musl's fopen asks every file it opens for writing whether it is a
+	 * terminal (ioctl TIOCGWINSZ), and none is: the overlay's flags alone
+	 * asked a hundred times a start */
+	if (number == SYS_ioctl && result == -ENOTTY)
+		return result;
 	if (result < 0 && result > -4096)
 	{
 		/* A negative small number is -errno; anything else negative is the
