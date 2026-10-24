@@ -76,8 +76,6 @@ this file sees none of the game's headers */
 union real_argb_color;
 void terminal_status_printf(union real_argb_color const *color, char const *format, ...);
 extern const union real_argb_color *global_real_argb_yellow;
-/* the Xbox memory window's size, as the host found room for it (platform.h) */
-extern unsigned long platform_contiguous_size;
 
 /* d3d8_dk.c: the vertex programs the game has made. The ids are the order
 the game makes them in, the same in both images (phase 4's dump relies on
@@ -972,25 +970,6 @@ static void status_frame(void)
 	if (++frames < DK_STATUS_EVERY_FRAMES)
 		return;
 	frames = 0;
-	/* a memory window smaller than the largest, once at the start, before
-	the shaders' messages: the host holds the range a 512 MB window takes
-	(port/switch/host/host_memory.c), and what still keeps one out was put
-	there before the program ran, elsewhere each start; Custom Edition maps
-	want the room */
-	{
-		static BOOL window_said;
-
-		if (!window_said)
-		{
-			window_said = TRUE;
-			if (platform_contiguous_size < 512UL * 1024 * 1024)
-			{
-				terminal_status_printf(global_real_argb_yellow,
-					"Restart to get a 512 MB memory window for Custom Edition maps.");
-				return;
-			}
-		}
-	}
 	pending = host_dk_shader_pending();
 	if (pending >= DK_STATUS_MINIMUM || (shown && pending))
 	{

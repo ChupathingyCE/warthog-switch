@@ -31,6 +31,8 @@ void host_logf(int priority, const char *format, ...) __attribute__((format(prin
 #define HOST_LOG_FATAL 7
 /* guest services also used inside the host (host_main.c) */
 void host_exit(int code) __attribute__((noreturn));
+/* the memory the process and the application pool have and use, for the log (host_mman.c) */
+void host_memory_report(const char *when);
 /* puts back the clocks host_sdl2.c raised for the game */
 void host_restore_clocks(void);
 int host_errno(void);

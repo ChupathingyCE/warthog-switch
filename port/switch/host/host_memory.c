@@ -850,6 +850,7 @@ int host_memory_initialize(uint32_t base, uint32_t size)
 		(unsigned int)(window_size / (1024 * 1024)),
 		(unsigned long long)window_base, (unsigned long long)window_end,
 		(unsigned long long)image_base, (unsigned long long)image_end);
+	host_memory_report("the window placed");
 	return 0;
 }
 

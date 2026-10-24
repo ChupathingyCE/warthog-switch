@@ -651,42 +651,60 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
         "-Wno-error=return-type",
     ]
     port_game_dir = game / config["game_sources"]
+    # The port's overrides of the game's files (port/switch/overrides, laid
+    # out as the game is: overrides/source/memory/data.c stands in for
+    # source/memory/data.c): each a fix the Switch needs in the game itself,
+    # kept as a whole copy until upstream has it. A .c is compiled in the
+    # game file's place with its flags, and a .h is found before the game's
+    # (the overrides' directories come first on the include path), so the
+    # submodule stays at upstream's commit. overrides/README.md says what
+    # each is for and where it is going; tools/switch_overrides.py lists
+    # and checks them.
+    overrides_dir = PORT_DIR / "overrides"
+    overrides_left = {path.relative_to(overrides_dir).as_posix() for path in overrides_dir.rglob("*")
+                      if path.suffix in (".c", ".h")}
+    override_includes = " ".join(f"-I{overrides_dir / where}" for where in
+                                 ("source", "source/main", "source/cseries", "port/linux/include", "port/linux/src")
+                                 if (overrides_dir / where).is_dir())
+    for name in sorted(overrides_left):
+        if not (game / name).is_file():
+            raise SystemExit(f"Switch: {overrides_dir / name} overrides no file of the game's: upstream renamed or "
+                             f"removed it, or the override is misplaced")
+
+    def override_of(source: Path, name: str):
+        """the override to compile in place of the game's source, if there
+        is one (said once: configure generates more than once)"""
+        if name not in overrides_left:
+            return None
+        overrides_left.remove(name)
+        if name not in _overrides_said:
+            _overrides_said.add(name)
+            print(f"Switch: {name} is built from the port's override, {overrides_dir / name} "
+                  f"(waiting on upstream: {overrides_dir / 'README.md'})")
+        return overrides_dir / name
+
     game_cflags = " ".join([
         guest_abi, guest_code, " ".join(game_flags), profile_flags,
         f"-include {prefix_header}", f"-include {semantics_header}",
+        override_includes,
         f"-I{LINUX_DIR}/include",
         # the headers of the port's own game units (port/linux/game), for the
         # game sources that call them
         f"-iquote {_quote(port_game_dir)}",
         port.game_defines_and_includes(config, _quote), *libc_includes, f"-idirafter {_quote(xdk_include)}",
     ])
-    # The port's overrides of the game's files (port/switch/overrides, laid
-    # out as the game is: overrides/source/memory/data.c stands in for
-    # source/memory/data.c): each a fix the Switch needs in the game itself,
-    # kept as a whole copy until upstream has it, and compiled in the game
-    # file's place with its flags, so the submodule stays at upstream's
-    # commit. overrides/README.md says what each is for and where it is
-    # going; tools/switch_overrides.py lists and checks them.
-    overrides_dir = PORT_DIR / "overrides"
-    overrides_left = {path.relative_to(overrides_dir).as_posix() for path in overrides_dir.rglob("*.c")}
     for source in port.game_sources(config):
         name = port.game_relative(source)
         cflags = game_cflags
         if name in VARIADIC_PROTOTYPE_FILES:
             cflags += f" -include {ANDROID_DIR}/include/halo_android_variadic_prototypes.h"
-        if name in overrides_left:
-            overrides_left.remove(name)
-            # (said once: configure generates more than once)
-            if name not in _overrides_said:
-                _overrides_said.add(name)
-                print(f"Switch: {name} is built from the port's override, {overrides_dir / name} "
-                      f"(waiting on upstream: {overrides_dir / 'README.md'})")
-            objects.append(guest_object(overrides_dir / name, cflags, "overrides"))
+        override = override_of(source, name)
+        if override:
+            # (its "x.h" includes find the game's own directory, as the game
+            # file's would; an override header beside it still comes first)
+            objects.append(guest_object(override, f"{cflags} -iquote {_quote(source.parent)}", "overrides"))
             continue
         objects.append(guest_object(source, cflags))
-    if overrides_left:
-        raise SystemExit(f"Switch: {', '.join(sorted(overrides_left))} in {overrides_dir} override no file of the "
-                         f"game's: upstream renamed or removed it, or the override is misplaced")
     for source in sorted(port_game_dir.glob("*.c")):
         objects.append(guest_object(source, game_cflags))
     # the dedicated server's director, with the game browser (server/), as
@@ -699,6 +717,7 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     platform_cflags = " ".join([
         guest_abi, guest_code, "-std=gnu11", "-D_GNU_SOURCE", "-DHALO_LINUX_PLATFORM_LAYER", "-w", profile_flags,
         f"-include {prefix_header}", f"-include {platform_semantics_header}",
+        override_includes,
         f"-I{LINUX_DIR}/src", f"-I{LINUX_DIR}/include", f"-I{ANDROID_DIR}/guest/runtime",
         f"-I{ANDROID_DIR}/include", f"-I{TOML_DIR}", f"-I{EXPAT_DIR}", f"-I{KCP_DIR}", f"-I{QRCODEGEN_DIR}",
         f"-I{MONOCYPHER_DIR}", f"-I{ZLIB_DIR}", f"-I{game}/source", f"-I{game}/source/cseries",
@@ -718,6 +737,10 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             # them: tools/version.py; the main menu's version line and the logs)
             objects.append(guest_object(source, f"{platform_cflags} "
                                                 f"{updater_defines(getattr(sln, 'port_release', False))}"))
+            continue
+        override = override_of(source, f"port/linux/src/{source.name}")
+        if override:
+            objects.append(guest_object(override, f"{platform_cflags} -iquote {_quote(source.parent)}", "overrides"))
             continue
         objects.append(guest_object(source, platform_cflags))
     for source in embedded_sources:

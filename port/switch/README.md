@@ -127,8 +127,9 @@ to [ChupathingyCE/chupathingyce](https://github.com/ChupathingyCE/chupathingyce)
 until it is merged, the fixed file is kept whole in
 [`port/switch/overrides/`](overrides/README.md), laid out as the game is
 (`overrides/source/memory/data.c` for `source/memory/data.c`), and the build
-compiles it in the game file's place with the same flags, so the submodule
-stays at upstream's commit and the workflows need nothing.
+compiles it in the game file's place with the same flags (a header override
+is found before the game's), so the submodule stays at upstream's commit and
+the workflows need nothing.
 `overrides/README.md` lists each override, what it fixes and the pull request
 it waits on; `python3 tools/switch_overrides.py` lists them and `--diff`
 shows each one's change against the submodule's file. The Port tests
