@@ -19,7 +19,31 @@ when its game file is gone, or when it is not listed below.
 
 Every override is listed here, with what it fixes and where it is going.
 
-None at present: the game is built from the submodule alone.
+## source/objects/object_lights.c
+
+`display.dynamic_light_limit` and `display.specular_light_limit`: of the
+dynamic lights on the screen (muzzle flashes, plasma bolts, explosions), the
+8 largest as seen from the camera light the level and the 2 largest add their
+specular highlights, the first-person weapon's own first; the rest still
+light the objects near them. Each dynamic light redraws the level's surfaces
+it reaches: in Chill Out with 64 players a frame's six lights took 11.3 ms of
+the Switch's GPU for their specular passes and 3.7 ms for their diffuse ones.
+0 is the Xbox's behaviour, every one rendered. The log says every 300 frames
+how many there were and how many were let go.
+
+- From halo-ce-universal bd294a490, 6028fd037 and c31dc4f6e (2026-10-23).
+- Base: upstream `3705fa1a`.
+- Upstream: pull request to be opened (with the two settings in
+  `port/linux/src/port_config.c`).
+
+## port/linux/src/port_config.c
+
+The settings table, with the rows the other overrides read: so far
+`display.dynamic_light_limit` (8) and `display.specular_light_limit` (2) for
+`source/objects/object_lights.c`. Each row goes upstream with the override
+that reads it.
+
+- Base: upstream `3705fa1a`.
 
 The first was `source/memory/data.c` (the data arrays' address under the
 moved window, for checkpoints, cutscene skips and the dynamic lights), from
