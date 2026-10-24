@@ -979,10 +979,6 @@ static const struct config_setting config_settings[] =
 		"With gpu_trace_frame, also the vertex shader constants." },
 	{ "debug.gpu_skip_vertex_shaders", _config_string, "\"\"", "HALO_GPU_SKIP_VS", _environment_value, _platform_all,
 		"Comma-separated ids of vertex shaders not to draw with." },
-	{ "debug.original_blur", _config_boolean, "false", "HALO_ORIGINAL_BLUR", _environment_value, _platform_android,
-		"Draw a blur screen effect (the cryo bay's waking up, cutscenes) as the\n"
-		"game does, in passes over the whole screen, rather than its passes on a\n"
-		"smaller copy of it. Takes effect the next start." },
 	{ "debug.gpu_dump_shaders", _config_string, "\"\"", "HALO_GPU_DUMP_SHADERS", _environment_value, _platform_all,
 		"A folder to write the generated GLSL to; empty none." },
 	{ "debug.gpu_debug_expression", _config_string, "\"\"", "HALO_GPU_DEBUG_EXPR", _environment_value, _platform_all,
