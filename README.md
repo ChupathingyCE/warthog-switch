@@ -32,12 +32,22 @@ submodule, and the shared code's console hooks live there.
 You need your own copy of Halo. No game files are included, and nothing from
 Nintendo's SDK: the port is built with devkitPro's free tools.
 
+> [!TIP]
+> **New on the Switch: cheats and settings from an overlay.** With
+> [OpenCE-Ultrahand](https://github.com/hardran3/OpenCE-Ultrahand), an
+> [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
+> package by **hardran3**, you can turn on cheats (god mode, infinite ammo,
+> super jump and more), revert to the last checkpoint, and change VSync,
+> interpolation and the frame-rate display without leaving the game. It
+> needs 0.8.0h or later, and Ultrahand 2.5.3 or later.
+
 ## Status
 
 **Working: boots and plays on Switch hardware (October 2026).** The port is
-maintained by [thelinkin3000](https://github.com/thelinkin3000). There is no
-release yet; the Build workflow builds every change, and a release is one
-pushed tag away (below).
+maintained by [thelinkin3000](https://github.com/thelinkin3000). The
+[releases](https://github.com/ChupathingyCE/warthog-switch/releases) are
+built by the Release workflow from a pushed tag (below), and the Build
+workflow builds every change.
 
 - **Network version:** the game's, 32 (wire `chupa-32a`). Joins hosts of
   network versions 11 through 33.

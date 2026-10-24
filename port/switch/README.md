@@ -343,6 +343,29 @@ system link and internet play work as on Android. The desktop-only parts of
 to offer. Voice chat records from a headset in the console's jack
 (`host_microphone.c`).
 
+## Overlay commands
+
+An Ultrahand overlay talks to the game through files in its package's folder,
+`/switch/.packages/halo/overlay`, which must be there when the game starts
+(then the main menu says "Ultrahand Overlay present and enabled", one of
+the game's messages, which `game.terminal_output` draws in the main menu on
+the Switch):
+
+- `command.txt`: one line, looked for once a second, taken (deleted) and run.
+  Either a console command as typed at the console (`cheat_deathless_player
+  true`, `map_name a10`, `game_revert`) or `config <setting> <value>` (also
+  `config <setting> = <value>`), which sets and saves a setting.
+- `result.txt`: the last command and `ok`, or `error: why`.
+- `flags/<name>.flag`: present while that boolean is true, a console global
+  (`cheat_infinite_ammo`) or a setting (`display.vsync`); `show_hud`'s is
+  `hud.flag`. The folder is emptied at the start and kept up to date once a
+  second.
+- `game/ChupaThingyCE.flag`: which game the package is talking to.
+
+`game.overlay_commands = false` in config.toml turns it off. The unit is
+`port/switch/overrides/port/linux/game/overlay_commands.c`, on its way
+upstream.
+
 ## What the port does not have
 
 Three things in the Android host are absent here, all of them development

@@ -1904,6 +1904,17 @@ static long long host_syscall_inner(long long number, long long a, long long b, 
 	case SYS_unlinkat:
 		if (host_memory_file_path(GUEST(const char *, b)) >= 0)
 			return host_memory_file_unlink(host_memory_file_path(GUEST(const char *, b)), GUEST(const char *, b));
+		/* Linux's AT_REMOVEDIR (0x200), which musl's remove() and rmdir() pass for a folder: newlib numbers its
+		 * flags its own way, so a folder is removed here as one (the overlay commands' folders) */
+		if ((int)c & 0x200)
+		{
+			int result;
+
+			host_sd_lock();
+			result = rmdir(GUEST(const char *, b));
+			host_sd_unlock();
+			return result_of(result);
+		}
 		return result_of(unlinkat((int)a, GUEST(const char *, b), (int)c));
 	case SYS_renameat:
 		return result_of(guest_renameat((int)a, GUEST(const char *, b), (int)c, GUEST(const char *, d)));
@@ -2074,6 +2085,11 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 		return result;
 	/* refused by the console, and said once already (host_mman.c) */
 	if (number == SYS_mprotect && result == -ENOTSUP)
+		return result;
+	/* musl's fopen asks every file it opens for writing whether it is a
+	 * terminal (ioctl TIOCGWINSZ), and none is: the overlay's flags alone
+	 * asked a hundred times a start */
+	if (number == SYS_ioctl && result == -ENOTTY)
 		return result;
 	if (result < 0 && result > -4096)
 	{
