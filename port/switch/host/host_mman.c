@@ -626,10 +626,24 @@ and what of it is used), and the application pool's (its resource limit,
 which the console's other application memory counts against too): how much
 is in use, the most there has been, and the ceiling. `when` says at what
 point of the run. */
+/* (libnx's heap, which takes all the application's memory there is at the
+start: everything the process maps or allocates comes out of it, so what is
+free is told by the C library's allocator, not the system) */
+extern char *fake_heap_start;
+extern char *fake_heap_end;
+
 void host_memory_report(const char *when)
 {
 	u64 used = 0, total = 0;
 	Handle limit = INVALID_HANDLE;
+	struct mallinfo heap = mallinfo();
+	size_t heap_size = (size_t)(fake_heap_end - fake_heap_start);
+	size_t untouched = heap_size > heap.arena ? heap_size - heap.arena : 0;
+
+	host_logf(HOST_LOG_INFO, "memory (%s): the heap has %.1f MB in use, %.1f MB free (%.1f MB free in what it has "
+		"handed out, %.1f MB never handed out), of %.1f MB", when, (double)heap.uordblks / 1048576.0,
+		(double)(heap.fordblks + untouched) / 1048576.0, (double)heap.fordblks / 1048576.0,
+		(double)untouched / 1048576.0, (double)heap_size / 1048576.0);
 
 	svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
 	svcGetInfo(&total, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
