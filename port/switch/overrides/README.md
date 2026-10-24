@@ -94,6 +94,15 @@ brought.
 - Upstream: pull request to be opened (with the setting in
   `port/linux/src/port_config.c`).
 
+## source/memory/lruv_cache.c
+
+Release builds leave out the LRU caches' walk over every block at each
+operation, a check only, which the debug builds keep.
+
+- From halo-ce-universal 7840fadbd (2026-10-23).
+- Base: upstream `3705fa1a`.
+- Upstream: pull request to be opened.
+
 ## port/linux/src/port_config.c
 
 The settings table, with the rows the other overrides read:
