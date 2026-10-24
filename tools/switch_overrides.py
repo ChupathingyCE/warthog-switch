@@ -8,8 +8,9 @@ file, compiled in the game file's place until upstream has it.
 
 The check fails (exit 1) when an override no longer differs from the
 submodule's file (upstream has it: repin, delete the override and its entry),
-when the game has no file at its path (renamed or removed upstream), or when
-README.md does not list it. The Port tests workflow runs it.
+when the game has no file at its path (renamed or removed upstream; a .c
+under port/linux/game is an addition instead, a unit of the port's own), or
+when README.md does not list it. The Port tests workflow runs it.
 """
 
 import argparse
@@ -44,6 +45,14 @@ def main() -> int:
         override = OVERRIDES / name
         upstream = GAME / name
         if not upstream.is_file():
+            # (a unit of the port's own under port/linux/game is an addition, compiled with the game's units)
+            if name.startswith("port/linux/game/") and name.endswith(".c"):
+                if f"## {name}" not in readme:
+                    print(f"{name}: FAILED, not listed in {README.relative_to(ROOT)} (a heading '## {name}')")
+                    failed = True
+                else:
+                    print(f"{name}: a unit the game has not ({sum(1 for _ in override.open(encoding='utf-8', errors='replace'))} lines)")
+                continue
             print(f"{name}: FAILED, the game has no such file (renamed or removed upstream?)")
             failed = True
             continue

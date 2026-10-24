@@ -666,7 +666,12 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     override_includes = " ".join(f"-I{overrides_dir / where}" for where in
                                  ("source", "source/main", "source/cseries", "port/linux/include", "port/linux/src")
                                  if (overrides_dir / where).is_dir())
-    for name in sorted(overrides_left):
+    # (an override under port/linux/game that the game has no file for is an
+    # addition: a game unit of the port's own, compiled with the game's, on
+    # its way upstream like the rest)
+    additions = {name for name in overrides_left if name.startswith("port/linux/game/") and name.endswith(".c")
+                 and not (game / name).is_file()}
+    for name in sorted(overrides_left - additions):
         if not (game / name).is_file():
             raise SystemExit(f"Switch: {overrides_dir / name} overrides no file of the game's: upstream renamed or "
                              f"removed it, or the override is misplaced")
@@ -706,7 +711,15 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             continue
         objects.append(guest_object(source, cflags))
     for source in sorted(port_game_dir.glob("*.c")):
-        objects.append(guest_object(source, game_cflags))
+        override = override_of(source, f"port/linux/game/{source.name}")
+        objects.append(guest_object(override or source, game_cflags, "overrides" if override else ""))
+    for name in sorted(additions):
+        overrides_left.remove(name)
+        if name not in _overrides_said:
+            _overrides_said.add(name)
+            print(f"Switch: {name} is a unit of the port's own, {overrides_dir / name} "
+                  f"(waiting on upstream: {overrides_dir / 'README.md'})")
+        objects.append(guest_object(overrides_dir / name, game_cflags, "overrides"))
     # the dedicated server's director, with the game browser (server/), as
     # the Android guest has it
     if getattr(sln, "game_browser", False):
