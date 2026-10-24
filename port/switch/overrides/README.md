@@ -103,6 +103,17 @@ operation, a check only, which the debug builds keep.
 - Base: upstream `3705fa1a`.
 - Upstream: pull request to be opened.
 
+## source/networking/network_connection.c
+
+A client reads its host's stream 32 KB at a time, not 4 KB: each read is a
+call to the system's sockets, on the Switch an IPC, and the local player's
+client reading a 64-player game's stream was about 9% of the game thread.
+
+- From halo-ce-universal 167820d0a (2026-10-23), the game's half; the host's
+  half (the receives counted) is in the port already.
+- Base: upstream `3705fa1a`.
+- Upstream: pull request to be opened.
+
 ## port/linux/src/port_config.c
 
 The settings table, with the rows the other overrides read:
