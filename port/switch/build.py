@@ -577,12 +577,6 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     # build has them: HALO_GAME_BROWSER, configure.py; and Halo PC's Custom
     # Edition maps, linux_build.py CUSTOM_EDITION_DEFINES, as the Android guest)
     console = [define for define in console_defines(sln) if not define.startswith("-DHALO_CONSOLE_PLAYERS=")]
-    # (two capabilities the overrides' settings read, which upstream's
-    # halo_console_features.h defines for the Switch once chupathingyce#450
-    # and #451 are in: the light limits and the once-a-tick particles on by
-    # default. Defined here meanwhile, the same value, so the header's
-    # definition is no redefinition)
-    console += ["-DHALO_CONSOLE_LIGHT_LIMITS=1", "-DHALO_CONSOLE_PARTICLE_TICKS=1"]
     guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_SWITCH_CONSOLE", "-DHALO_WINDOW_REBASE"] + console
                          + game_browser_defines(sln) + CUSTOM_EDITION_DEFINES)
 
