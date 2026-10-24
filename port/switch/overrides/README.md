@@ -33,7 +33,7 @@ how many there were and how many were let go.
 
 - From halo-ce-universal bd294a490, 6028fd037 and c31dc4f6e (2026-10-23).
 - Base: upstream `3705fa1a`.
-- Upstream: pull request to be opened (with the two settings in
+- Upstream: ChupathingyCE/chupathingyce#450 (with the two settings in
   `port/linux/src/port_config.c`).
 
 ## source/effects/particles.c
@@ -55,20 +55,22 @@ every 10 s how many lived.
   5bf2e32f5 (2026-10-23), with `source/effects/particles.h` (the prototype of
   `particle_render_position`) and `source/render/render_particles.c` below.
 - Base: upstream `3705fa1a`.
-- Upstream: pull request to be opened (with the two settings in
+- Upstream: ChupathingyCE/chupathingyce#451 (with the two settings in
   `port/linux/src/port_config.c`).
 
 ## source/effects/particles.h
 
 The prototype of `particle_render_position`, for `source/effects/particles.c`
-above and `source/render/render_particles.c` below. Goes with them.
+above and `source/render/render_particles.c` below. Goes with them
+(ChupathingyCE/chupathingyce#451).
 
 ## source/render/render_particles.c
 
 The particles drawn where `particle_render_position` puts them between their
 ticks (`source/effects/particles.c` above), and the visible particles sorted
 by a stable radix sort on qsort's key rather than qsort, from halo-ce-universal
-7e5aecc29 (2026-10-23). Goes with particles.c.
+7e5aecc29 (2026-10-23). Goes with particles.c
+(ChupathingyCE/chupathingyce#451).
 
 ## source/interface/hud.c
 
@@ -79,7 +81,7 @@ Switch's game thread.
 
 - From halo-ce-universal a4f9adbfd (2026-10-23).
 - Base: upstream `3705fa1a`.
-- Upstream: pull request to be opened.
+- Upstream: ChupathingyCE/chupathingyce#452.
 
 ## source/rasterizer/xbox/rasterizer_xbox_screen_effect.c
 
@@ -92,7 +94,7 @@ brought.
 - From halo-ce-universal e13e9f211 (2026-10-23); `debug.original_blur` is
   upstream's own row already (chupathingyce#414), so no settings change.
 - Base: upstream `3705fa1a`.
-- Upstream: pull request to be opened.
+- Upstream: ChupathingyCE/chupathingyce#453.
 
 ## source/memory/lruv_cache.c
 
@@ -101,7 +103,7 @@ operation, a check only, which the debug builds keep.
 
 - From halo-ce-universal 7840fadbd (2026-10-23).
 - Base: upstream `3705fa1a`.
-- Upstream: pull request to be opened.
+- Upstream: ChupathingyCE/chupathingyce#454.
 
 ## source/networking/network_connection.c
 
@@ -112,7 +114,7 @@ client reading a 64-player game's stream was about 9% of the game thread.
 - From halo-ce-universal 167820d0a (2026-10-23), the game's half; the host's
   half (the receives counted) is in the port already.
 - Base: upstream `3705fa1a`.
-- Upstream: pull request to be opened.
+- Upstream: ChupathingyCE/chupathingyce#455.
 
 ## port/linux/src/dsound_sdl.c
 
@@ -129,7 +131,7 @@ at most 5 ms of mixing (2.7 ms of the Switch's game thread per call before).
   call sites chupathingyce's file has that hcu's does not (the listener's and
   the buffers' setters).
 - Base: upstream `3705fa1a`.
-- Upstream: pull request to be opened.
+- Upstream: ChupathingyCE/chupathingyce#456.
 
 ## port/linux/src/d3d8_resources.c
 
@@ -138,7 +140,7 @@ behind the Sentinels' beams for a storage the GPU is still reading.
 
 - From halo-ce-universal bd0da7c99 (2026-10-20).
 - Base: upstream `3705fa1a`.
-- Upstream: pull request to be opened.
+- Upstream: ChupathingyCE/chupathingyce#457.
 
 ## port/linux/src/port_config.c
 
