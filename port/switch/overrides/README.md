@@ -81,14 +81,28 @@ Switch's game thread.
 - Base: upstream `3705fa1a`.
 - Upstream: pull request to be opened.
 
+## source/rasterizer/xbox/rasterizer_xbox_screen_effect.c
+
+A blur screen effect (the cryo bay's waking up, cutscenes) drawn small is
+drawn on copies as large as its spread hides, so a10's waking up no longer
+loses its sharpness; `debug.original_blur` draws it in passes over the whole
+screen, as the game does. Refines the blurs drawn small that chupathingyce#414
+brought.
+
+- From halo-ce-universal e13e9f211 (2026-10-23).
+- Base: upstream `3705fa1a`.
+- Upstream: pull request to be opened (with the setting in
+  `port/linux/src/port_config.c`).
+
 ## port/linux/src/port_config.c
 
 The settings table, with the rows the other overrides read:
 `display.dynamic_light_limit` (8) and `display.specular_light_limit` (2) for
 `source/objects/object_lights.c`; `display.particle_limit` (2048 under
 `HALO_SWITCH_CONSOLE`, 4096 elsewhere) and `debug.original_particles` for
-`source/effects/particles.c`. Each row goes upstream with the override that
-reads it.
+`source/effects/particles.c`; `debug.original_blur` for
+`source/rasterizer/xbox/rasterizer_xbox_screen_effect.c`. Each row goes
+upstream with the override that reads it.
 
 - Base: upstream `3705fa1a`.
 
