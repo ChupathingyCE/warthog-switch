@@ -70,6 +70,17 @@ ticks (`source/effects/particles.c` above), and the visible particles sorted
 by a stable radix sort on qsort's key rather than qsort, from halo-ce-universal
 7e5aecc29 (2026-10-23). Goes with particles.c.
 
+## source/interface/hud.c
+
+Player names over the heads: an enemy's line of sight is tested once a tick,
+and only after the screen and the range tests, which no longer look for the
+heads of the far. With 64 players the tests were a measurable share of the
+Switch's game thread.
+
+- From halo-ce-universal a4f9adbfd (2026-10-23).
+- Base: upstream `3705fa1a`.
+- Upstream: pull request to be opened.
+
 ## port/linux/src/port_config.c
 
 The settings table, with the rows the other overrides read:
