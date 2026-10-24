@@ -114,6 +114,23 @@ client reading a 64-player game's stream was about 9% of the game thread.
 - Base: upstream `3705fa1a`.
 - Upstream: pull request to be opened.
 
+## port/linux/src/dsound_sdl.c
+
+The sound mixer and the game's thread no longer wait on each other: the
+mixer holds its lock one voice at a time and lets the game's thread in
+between voices; the game's thread no longer waits for the lock to tell
+streams their packets are done (tried, and told the next frame); and 256
+frames are mixed at a time, not 1024, so a sound started or stopped waits out
+at most 5 ms of mixing (2.7 ms of the Switch's game thread per call before).
+
+- From halo-ce-universal cc0cfe80b, 1ff5a44fe and 764f5d02c (2026-10-23 and
+  24); two hunks placed by hand (the stream setters' lock and the silent
+  clock's 10 ms in two chunks), and the lock taken the new way at the nine
+  call sites chupathingyce's file has that hcu's does not (the listener's and
+  the buffers' setters).
+- Base: upstream `3705fa1a`.
+- Upstream: pull request to be opened.
+
 ## port/linux/src/port_config.c
 
 The settings table, with the rows the other overrides read:
