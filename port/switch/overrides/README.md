@@ -57,7 +57,7 @@ the default under `HALO_SWITCH_CONSOLE`; "console" is upstream's behaviour and
 the default elsewhere; "none" and "always" as they say. The reference's rule,
 on upstream's `terminal_render` values.
 
-- Base: upstream `f5abeb99`.
+- Base: upstream `d7fafc81`.
 - Upstream: pull request to be opened (the setting with its "console"
   default changes nothing on the desktop; a console build could turn
   "menus" on through a capability of `halo_console_features.h`).
@@ -82,21 +82,13 @@ opened, removed, and an empty folder removed, for
 
 ## port/linux/src/port_config.c
 
-The settings table with its four rows of 2026-10-24 (`display.particle_limit`,
-`display.particle_ticks`, `display.dynamic_light_limit`,
-`display.specular_light_limit`) moved out of the `debug.gpu_fault_test` row,
-inside whose braces upstream has them: there they are not settings at all
-(the compiler takes the first as that row's description and drops the rest,
-a warning the guest's `-w` hides), the game logs "no such setting" and reads
-0 for each, and the light limits, the particle limit and the once-a-tick
-particles stay off. And `game.overlay_commands` (under `HALO_SWITCH_CONSOLE`),
-with `config_set_text` and `config_boolean_setting`, for
-`port/linux/game/overlay_commands.c`; and `game.terminal_output`, for
-`source/interface/terminal.c`.
+The settings table with the port's two rows: `game.overlay_commands` (under
+`HALO_SWITCH_CONSOLE`), with `config_set_text` and `config_boolean_setting`,
+for `port/linux/game/overlay_commands.c`; and `game.terminal_output`, for
+`source/interface/terminal.c`. Each goes upstream with the override that
+reads it.
 
-- Base: upstream `f5abeb99`.
-- Upstream: ChupathingyCE/chupathingyce#458 (the rows); the overlay's part
-  goes with its addition.
+- Base: upstream `d7fafc81`.
 
 The first was `source/memory/data.c` (the data arrays' address under the
 moved window, for checkpoints, cutscene skips and the dynamic lights), from
@@ -107,4 +99,6 @@ once-a-tick particles, the player names' line of sight once a tick, the small
 blurs drawn on copies, the LRU caches' walk left out of release builds, a
 client's 32 KB reads, the sound mixer's lock, the dynamic vertex buffers' 16
 storages), went upstream as ChupathingyCE/chupathingyce#450 to #457, all
-merged the same day, and left with the repin to `f5abeb99`.
+merged the same day, and left with the repin to `f5abeb99`. The settings
+rows of #450 and #451 were mended here for a few hours of 2026-10-24 until
+upstream took the same fix (ChupathingyCE/chupathingyce#458).
