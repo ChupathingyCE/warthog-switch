@@ -4,8 +4,12 @@ Fixes the Switch needs in the game itself (the `chupathingyce` submodule),
 each kept here as a whole copy of the fixed file until upstream has it. The
 folder is laid out as the game is: `source/memory/data.c` here would stand in
 for the submodule's `source/memory/data.c`. The build (`port/switch/build.py`)
-compiles an override in the game file's place, with the game file's flags,
-so the submodule stays at upstream's commit and the workflows need nothing.
+compiles a `.c` override in the game file's place, with the game file's flags,
+and finds a `.h` override before the game's header (the overrides' directories
+come first on the include path), so the submodule stays at upstream's commit
+and the workflows need nothing. The game's own sources (`source/`) and the
+platform layer it shares with the desktop (`port/linux/src/`) can both be
+overridden.
 
 `python3 tools/switch_overrides.py` lists the overrides; `--diff` shows each
 one's change against the submodule's file. The Port tests workflow runs it,
