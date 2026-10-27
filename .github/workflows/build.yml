@@ -14,19 +14,26 @@ name: Build
 # runner, so nothing can be installed from them here); the NDK comes from
 # Google, and the guest's clang from LLVM's own packages, as Debian's emits
 # indirect branches the ELF assembler will not take for arm64_32. The release
-# workflow (release.yml) builds the same way for a tag.
+# workflow (release.yml) builds the same way for a tag, and the nightly
+# (nightly.yml) calls this one.
 on:
   push:
     branches:
       - main
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      game-ref:
+        description: A commit of the game to build instead of the submodule's (the nightly's; empty, the submodule's)
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -90,6 +97,18 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: true
+
+      # the nightly builds the game's current main without committing it
+      - name: Use the requested game commit
+        env:
+          GAME_REF: ${{ inputs.game-ref }}
+        run: |
+          if [ -n "$GAME_REF" ]; then
+            git config --global --add safe.directory '*'
+            git -C chupathingyce fetch --depth 1 origin "$GAME_REF"
+            git -C chupathingyce checkout --detach FETCH_HEAD
+            git -C chupathingyce log -1 --oneline
+          fi
 
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
