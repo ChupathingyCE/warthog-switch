@@ -872,10 +872,40 @@ int posix_socket_accept(int socket, void *address, int *address_length)
 	return succeed(result);
 }
 
+/* the bytes the game has sent and received on its sockets, for the server's
+health reports (the game's port/linux/game/game_events.c), as posix_net.c
+counts them: every thread's, so added atomically. A send the batch holds
+counts when the game is told it went, a batched datagram when it is taken */
+static struct
+{
+	unsigned long long sent __attribute__((aligned(8)));
+	unsigned long long received __attribute__((aligned(8)));
+} traffic;
+
+static int traffic_sent(int result)
+{
+	if (result > 0)
+		__atomic_fetch_add(&traffic.sent, (unsigned long long)result, __ATOMIC_RELAXED);
+	return result;
+}
+
+static int traffic_received(int result)
+{
+	if (result > 0)
+		__atomic_fetch_add(&traffic.received, (unsigned long long)result, __ATOMIC_RELAXED);
+	return result;
+}
+
+void posix_socket_traffic(unsigned long long *sent, unsigned long long *received)
+{
+	*sent = __atomic_load_n(&traffic.sent, __ATOMIC_RELAXED);
+	*received = __atomic_load_n(&traffic.received, __ATOMIC_RELAXED);
+}
+
 int posix_socket_send(int socket, const void *buffer, int length, int flags)
 {
 	SENDS_FLUSH();
-	return succeed((int)send(socket, buffer, (size_t)length, flags | MSG_NOSIGNAL));
+	return traffic_sent(succeed((int)send(socket, buffer, (size_t)length, flags | MSG_NOSIGNAL)));
 }
 
 int posix_socket_sendto(int socket, const void *buffer, int length, int flags,
@@ -898,12 +928,12 @@ int posix_socket_sendto(int socket, const void *buffer, int length, int flags,
 	if (!broadcast && address && sends_hold(socket, buffer, length, flags, &converted, converted_length))
 	{
 		last_error = 0;
-		return length;
+		return traffic_sent(length);
 	}
 	SENDS_FLUSH();
 	result = (int)sendto(socket, buffer, (size_t)length, flags | MSG_NOSIGNAL,
 		address ? (struct sockaddr *)&converted : NULL, converted_length);
-	return succeed(result);
+	return traffic_sent(succeed(result));
 }
 
 /* the receives that reach the socket service (each an IPC; a batched datagram does not), counted and said every 5 s
@@ -964,13 +994,13 @@ int posix_socket_recv(int socket, void *buffer, int length, int flags)
 			last_error = WSAEMSGSIZE;
 			return -1;
 		}
-		return succeed(result);
+		return traffic_received(succeed(result));
 	}
 	result = (int)recv(socket, buffer, (size_t)length, flags);
 	receive_counted(result);
 	if (result < 0)
 		watch_empty(socket, flags);
-	return succeed(result);
+	return traffic_received(succeed(result));
 }
 
 int posix_socket_recvfrom(int socket, void *buffer, int length, int flags,
@@ -1006,7 +1036,7 @@ int posix_socket_recvfrom(int socket, void *buffer, int length, int flags,
 				last_error = WSAEMSGSIZE;
 				return -1;
 			}
-			return succeed(result);
+			return traffic_received(succeed(result));
 		}
 	}
 	vector.iov_base = buffer;
@@ -1029,7 +1059,7 @@ int posix_socket_recvfrom(int socket, void *buffer, int length, int flags,
 		last_error = WSAEMSGSIZE;
 		return -1;
 	}
-	return succeed(result);
+	return traffic_received(succeed(result));
 }
 
 int posix_socket_shutdown(int socket, int how)
@@ -1477,13 +1507,14 @@ void posix_discord_close(int handle)
 	(void)handle;
 }
 
-/* ---------- four that are not about the network, but live in posix_net.c
+/* ---------- five that are not about the network, but live in posix_net.c
  * beside the ones that are, and so came out with it.
 
-Three of them exist for the desktop's benefit: a command line to read
-arguments from, a per-user secret file in a runtime directory, and a desktop
-entry registering a URL scheme. None of the three has anything to offer a
-console: the game's menus join internet games themselves. The fourth is the process's own id, which the network code
+Four of them exist for the desktop's benefit: a command line to read
+arguments from, a per-user secret file in a runtime directory, a desktop
+entry registering a URL scheme, and the keyboard's Shift held at the start.
+None of the four has anything to offer a console: the game's menus join
+internet games themselves. The fifth is the process's own id, which the network code
 used and the game does not, but the import table asks for it either way. */
 
 posix_ulong posix_process_id(void)
@@ -1492,6 +1523,13 @@ posix_ulong posix_process_id(void)
 	 * returns -1; the guest's one process is answered the way the
 	 * syscall shim answers it */
 	return 1;
+}
+
+int posix_shift_key_held(void)
+{
+	/* (the launcher's Shift at the start: -1, not known, as posix_net.c
+	answers off the Mac) */
+	return -1;
 }
 
 int posix_command_line_argument(int index, char *buffer, posix_ulong size)
