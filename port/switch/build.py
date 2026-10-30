@@ -576,8 +576,12 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     # (the game browser, the game list and dedicated servers, as every other
     # build has them: HALO_GAME_BROWSER, configure.py; and Halo PC's Custom
     # Edition maps, linux_build.py CUSTOM_EDITION_DEFINES, as the Android guest)
+    # HALO_DELTA_PLATFORM: Delta Peer says the Switch's own platform (9), not
+    # the Android guest's (4), with the Switch's row of DELTA_PLATFORM_POLICY
+    # (the game's docs/delta.md, "Platform numbers")
     console = [define for define in console_defines(sln) if not define.startswith("-DHALO_CONSOLE_PLAYERS=")]
-    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_SWITCH_CONSOLE", "-DHALO_WINDOW_REBASE"] + console
+    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_SWITCH_CONSOLE", "-DHALO_WINDOW_REBASE",
+                                            "-DHALO_DELTA_PLATFORM=_delta_platform_switch"] + console
                          + game_browser_defines(sln) + CUSTOM_EDITION_DEFINES)
 
     # musl is configured for an Apple target and passes

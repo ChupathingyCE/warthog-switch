@@ -343,6 +343,14 @@ system link and internet play work as on Android. The desktop-only parts of
 to offer. Voice chat records from a headset in the console's jack
 (`host_microphone.c`).
 
+The game is a full Delta Peer, the desktop's (`port/linux/src/delta_peer_game.c`):
+it hosts and joins, with Halo PC's maps, team changes and moderation. It says
+the Switch's own platform, 9, which the guest's Android path would otherwise
+read as Android's (`HALO_DELTA_PLATFORM`, `build.py`), so other machines show
+it as a Switch and a host gives it the Switch's row of the game's
+`DELTA_PLATFORM_POLICY`: games of 16 players, more with
+`network.platform_limits = "off"`.
+
 ## Overlay commands
 
 An Ultrahand overlay talks to the game through files in its package's folder,
