@@ -49,8 +49,9 @@ maintained by [thelinkin3000](https://github.com/thelinkin3000). The
 built by the Release workflow from a pushed tag (below), and the Build
 workflow builds every change.
 
-- **Network version:** the game's, 32 (wire `chupa-32a`). Joins hosts of
-  network versions 11 through 33.
+- **Network:** the game's wire, `chupa-41a`. Joins hosts of network
+  versions 11 through 41, OpenCE's newest, as the signed compatibility
+  table allows.
 - **Online:** **Multiplayer > ONLINE GAMES** lists the games online and
   joins them through the PCs' own tunnel, dedicated servers too. Hosting from
   the console works, up to 48 players, the most it was measured to hold.
