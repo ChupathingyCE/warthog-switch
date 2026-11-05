@@ -49,8 +49,9 @@ maintained by [thelinkin3000](https://github.com/thelinkin3000). The
 built by the Release workflow from a pushed tag (below), and the Build
 workflow builds every change.
 
-- **Network version:** the game's, 32 (wire `chupa-32a`). Joins hosts of
-  network versions 11 through 33.
+- **Network:** the game's wire, `chupa-41a`. Joins hosts of network
+  versions 11 through 41, OpenCE's newest, as the signed compatibility
+  table allows.
 - **Online:** **Multiplayer > ONLINE GAMES** lists the games online and
   joins them through the PCs' own tunnel, dedicated servers too. Hosting from
   the console works, up to 48 players, the most it was measured to hold.
@@ -74,8 +75,8 @@ workflow builds every change.
   Controls Setup. There is no QUIT: the HOME button is the way out.
 - **Updates itself:** a release build looks for a newer release when it
   starts and offers it (`update.auto` turns that off).
-- **Not yet:** a release, and the shared shader keys that would make a new
-  console's first start quicker.
+- **Not yet:** the shared shader keys that would make a new console's first
+  start quicker.
 
 ## What you need
 
@@ -96,7 +97,8 @@ workflow builds every change.
 ## Install
 
 1. Get the card's folder: the latest release's `halo-switch-release.zip`
-   when there is one, the Build workflow's artifact on this repository's
+   from [Releases](https://github.com/ChupathingyCE/warthog-switch/releases),
+   the Build workflow's artifact on this repository's
    Actions page, or your own build (see "Building it yourself").
 2. Unzip it to `sd:/switch/ChupaThingyCE/` on the card, so `halo.nro` (the
    program), `halo_guest.elf` (the game), `menus/` and `brokers.txt` are in
@@ -119,7 +121,9 @@ or the sys-ftpd module, which stays up while the game runs).
 ## Useful log files
 
 The program writes its log to `halo.log` and the game to `logs/debug.txt`,
-both in the game's folder. Attach them to bug reports.
+both in the game's folder. Attach them to bug reports, or send them at
+[dump.chupathingy.org](https://dump.chupathingy.org) (platform: Switch) and
+give the reference code it shows.
 
 ## Known quirks
 
