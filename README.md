@@ -75,8 +75,8 @@ workflow builds every change.
   Controls Setup. There is no QUIT: the HOME button is the way out.
 - **Updates itself:** a release build looks for a newer release when it
   starts and offers it (`update.auto` turns that off).
-- **Not yet:** a release, and the shared shader keys that would make a new
-  console's first start quicker.
+- **Not yet:** the shared shader keys that would make a new console's first
+  start quicker.
 
 ## What you need
 
@@ -97,7 +97,8 @@ workflow builds every change.
 ## Install
 
 1. Get the card's folder: the latest release's `halo-switch-release.zip`
-   when there is one, the Build workflow's artifact on this repository's
+   from [Releases](https://github.com/ChupathingyCE/warthog-switch/releases),
+   the Build workflow's artifact on this repository's
    Actions page, or your own build (see "Building it yourself").
 2. Unzip it to `sd:/switch/ChupaThingyCE/` on the card, so `halo.nro` (the
    program), `halo_guest.elf` (the game), `menus/` and `brokers.txt` are in
@@ -120,7 +121,9 @@ or the sys-ftpd module, which stays up while the game runs).
 ## Useful log files
 
 The program writes its log to `halo.log` and the game to `logs/debug.txt`,
-both in the game's folder. Attach them to bug reports.
+both in the game's folder. Attach them to bug reports, or send them at
+[dump.chupathingy.org](https://dump.chupathingy.org) (platform: Switch) and
+give the reference code it shows.
 
 ## Known quirks
 
