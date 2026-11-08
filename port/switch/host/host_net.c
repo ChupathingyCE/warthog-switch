@@ -1564,6 +1564,14 @@ int posix_register_url_scheme(const char *scheme, const char *description)
 	return 0;
 }
 
+int posix_register_discord_launch(const char *application)
+{
+	/* nor a Discord to start the game for a friend's Join (game 0.9.0's
+	p2p_discord.c asks): DISCORD_REGISTER_NONE, port/linux/src/discord_register.h */
+	(void)application;
+	return 3;
+}
+
 /* ---------- randomness
 
 The console's own generator (the csrng service): the game asks for
