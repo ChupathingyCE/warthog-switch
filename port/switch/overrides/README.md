@@ -68,6 +68,9 @@ The call of `overlay_commands_update` after `telnet_console_process` in both
 main loops (the pregame's and the game's), and its prototype. For
 `port/linux/game/overlay_commands.c`.
 
+Keep it in step with the game's own: `first_person_field_of_view_widened`
+(game 5b237e733, the screen fog's canopy redraw) was added here 2026-11-07.
+
 ## port/linux/src/port_config.h
 
 The prototypes of `config_set_text` and `config_boolean_setting`, for
