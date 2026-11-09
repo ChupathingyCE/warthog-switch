@@ -73,7 +73,7 @@ enum
 	MAXIMUM_GLYPHS = 4096,
 	MAXIMUM_TEXT = 64 * 1024,
 	MAXIMUM_TEXTS = 4096,
-	MAXIMUM_LAYERS = 4,
+	MAXIMUM_LAYERS = 5,
 };
 
 /* a quad as gathered (layout coordinates) */
@@ -763,6 +763,56 @@ float ui_overlay_button(int button, float size, float x, float y, unsigned int c
 			UI_ALIGN_CENTER, fade(key ? 0x1A2230FF : 0xFFFFFFFF, share), label);
 		return width;
 	}
+}
+
+/* ---------- the Guide's pieces (the game's ui_overlay.c): the keyboard's
+own key caps, and the plasma, drawn here as its tint alone (the deko3d
+program has no noise map yet) */
+
+int ui_overlay_keyboard(void)
+{
+	return scheme() == 0;
+}
+
+float ui_overlay_key_width(const char *label, float size)
+{
+	return pill_width(label ? label : "", size);
+}
+
+float ui_overlay_key(const char *label, float size, float x, float y, unsigned int color)
+{
+	float share = (float)(color & 0xFF) / 255.0f;
+	float width = pill_width(label ? label : "", size);
+	float height = size * 0.78f, top_y = y + (size - height) * 0.5f;
+	float label_size = pill_text_size(size);
+
+	ui_overlay_rect(x, top_y + size * 0.06f, width, height, height * 0.22f, fade(0x00000070, share));
+	ui_overlay_gradient(x, top_y, width, height, height * 0.22f, fade(0xF2F5FAFF, share), fade(0xA9B3C2FF, share));
+	ui_overlay_outline(x, top_y, width, height, height * 0.22f, 0.75f, fade(0x5F6B7DFF, share));
+	add_text(POSIX_UI_FONT_MENU, label_size, x + width * 0.5f, top_y + (height - label_size) * 0.5f + 0.2f,
+		UI_ALIGN_CENTER, fade(0x1A2230FF, share), label ? label : "");
+	return width;
+}
+
+void ui_overlay_plasma(float x, float y, float width, float height, float radius, unsigned int color,
+	unsigned int time)
+{
+	(void)time;
+	ui_overlay_rect(x, y, width, height, radius, color);
+}
+
+void ui_overlay_plasma_source(int serial, const unsigned char *pixels, int width, int height)
+{
+	(void)serial;
+	(void)pixels;
+	(void)width;
+	(void)height;
+}
+
+int ui_overlay_plasma_from_texture(const void *hardware_format)
+{
+	(void)hardware_format;
+	return 0;
 }
 
 /* ---------- the platforms' logos */
