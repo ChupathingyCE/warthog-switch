@@ -1036,7 +1036,7 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
         command=f"$switch_host_cc -c {host_arch} -I{_quote(game)} -o $out $in",
         description="SWITCH HOST AS $out",
     )
-    ui_assets = [game / "port" / "assets" / "fonts" / "OpenCE-Regular.ttf",
+    ui_assets = [game / "port" / "assets" / "fonts" / "CyborgInterfaceGothic-Regular.ttf",
                  game / "port" / "assets" / "fonts" / "Overpass-750.ttf", PORT_DIR / "art" / "menu_panel.svg"]
     for source in sorted((PORT_DIR / "host").glob("*.S")):
         obj = host_obj_dir / (source.name + ".o")
