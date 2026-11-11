@@ -52,6 +52,14 @@ from tools.android_build import (ANDROID_API, EXPAT_SOURCES, GUEST_ABI_FLAGS, GU
                                  _find_ndk, ndk_toolchain)
 from tools.console_build import ConsolePort, console_defines
 from tools.embed_assets import FONT_LIST, PROMPT_ICONS, UI_FONT_FILES, hud_asset_inputs, hud_configure_inputs
+# (the game's prompt fonts for a few devices, the Steam pads' and the Wii U's,
+# which the Switch never meets: left out where the game's tool can, since
+# ChupathingyCE/chupathingyce#1095)
+try:
+    from tools.embed_assets import PROMPT_FONTS  # noqa: F401
+    PROMPT_FONTS_FLAG = "--prompt-fonts none "
+except ImportError:
+    PROMPT_FONTS_FLAG = ""
 from tools.linux_build import (compile_launcher, CUSTOM_EDITION_DEFINES, game_browser_defines, LINUX_PROFILE,
                                 MINIUPNPC_DEFINES, pgo_mode, pgo_profile, profile_use_flags, updater_defines,
                                 XDK_INCLUDE)
@@ -455,7 +463,7 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
         ui_fonts_c = gen_dir / "ui_fonts.c"
         n.rule(
             name="switch_embed_fonts",
-            command=f"{python} {_quote(GAME_TOOLS / 'embed_assets.py')} --fonts $out",
+            command=f"{python} {_quote(GAME_TOOLS / 'embed_assets.py')} --fonts {PROMPT_FONTS_FLAG}$out",
             description="SWITCH EMBED $out",
         )
         n.build(outputs=ui_fonts_c, rule="switch_embed_fonts",
