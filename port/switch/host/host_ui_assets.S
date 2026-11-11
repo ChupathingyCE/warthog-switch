@@ -14,7 +14,7 @@ where the build runs; port/switch/build.py makes this file depend on them.
 	.global host_ui_title_font
 	.global host_ui_title_font_end
 host_ui_title_font:
-	.incbin "port/assets/fonts/OpenCE-Regular.ttf"
+	.incbin "port/assets/fonts/CyborgInterfaceGothic-Regular.ttf"
 host_ui_title_font_end:
 
 	.balign 16
