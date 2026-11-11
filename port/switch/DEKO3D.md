@@ -4,7 +4,7 @@ A second renderer for the Switch build that drives the GPU through
 [deko3d](https://github.com/devkitPro/deko3d) instead of Mesa, with compiled
 shaders cached on the SD card.
 
-Status: phases 0 to 6 done (split screen yet to be tried on the console); phase 7, the game thread measured, under way; see "Progress" at the end.
+Status: deko3d is the Switch's only renderer. Phases 0 to 6 are done (split screen yet to be tried on the console). Phase 7, the game thread measured, is under way. Phase 8's render thread is in the build and on by default (`debug.render_thread`). See "Progress" at the end.
 
 ---
 
@@ -33,7 +33,7 @@ words each.
 |---|---|
 | Shared code with the GL renderer | **Copied**, not extracted. The GL renderer stays untouched so the other platforms keep working as they do; the two can be merged later. |
 | A shader key nobody has compiled yet, met during play | **The draw is skipped** while the shader compiles on another thread. |
-| The Mesa renderer on the Switch | **Kept, selectable for good** in `config.toml`. |
+| The Mesa renderer on the Switch | First kept, selectable in `config.toml`. Since removed: deko3d is the only renderer, and `display.renderer` is not a Switch setting ("The Switch's only renderer", below). |
 | Shader compiler | UAM's compiler, linked into the Switch host and run on the console (it builds for the Switch). |
 | What players share | **Keys**, not compiled shaders: a key is data, compiled shaders are GPU code nobody can check, and keys survive changes to the generators and the compiler. |
 | Compiling the known keys a console has not cached (24.5 s on one core in memory with newlib's malloc; 8.8 s on two with the host's allocator for UAM, phase 5 "two compile threads") | **In the background, on two threads (one on each helper core), while the game runs** - no waiting screen. Several threads were measured slower than one (phase 5, step 1) until UAM's allocations were each thread's own (host_uam_alloc.c). Draws whose shader is not ready are skipped, and the keys they need go to the front; the cache keeps every shader compiled, so it happens once a console (and again after a change to the generators or UAM). |

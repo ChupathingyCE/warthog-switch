@@ -32,110 +32,188 @@ submodule, and the shared code's console hooks live there.
 You need your own copy of Halo. No game files are included, and nothing from
 Nintendo's SDK: the port is built with devkitPro's free tools.
 
-> [!TIP]
-> **New on the Switch: cheats and settings from an overlay.** With
-> [OpenCE-Ultrahand](https://github.com/hardran3/OpenCE-Ultrahand), an
-> [Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay)
-> package by **hardran3**, you can turn on cheats (god mode, infinite ammo,
-> super jump and more), revert to the last checkpoint, and change VSync,
-> interpolation and the frame-rate display without leaving the game. It
-> needs 0.8.0h or later, and Ultrahand 2.5.3 or later.
-
 ## Status
 
-**Working: boots and plays on Switch hardware (October 2026).** The port is
-maintained by [thelinkin3000](https://github.com/thelinkin3000). The
-[releases](https://github.com/ChupathingyCE/warthog-switch/releases) are
-built by the Release workflow from a pushed tag (below), and the Build
-workflow builds every change.
+Working. It boots and plays on Switch hardware. The port is maintained by
+[thelinkin3000](https://github.com/thelinkin3000).
 
-- **Network:** the game's wire, `chupa-41a`. Joins hosts of network
-  versions 11 through 41, OpenCE's newest, as the signed compatibility
-  table allows.
-- **Online:** **Multiplayer > ONLINE GAMES** lists the games online and
-  joins them through the PCs' own tunnel, dedicated servers too. Hosting from
-  the console works, up to 48 players, the most it was measured to hold.
-  **Link Profile** links the console to your Delta profile on
-  [stats.chupathingy.org](https://stats.chupathingy.org), so your games count
-  toward you.
-- **System Link:** joins PC hosts and consoles on your network.
-- **Display:** 720 lines by default, drawn and scaled to the console's
-  1280x720 in the hands or 1920x1080 docked; 480, 900 or 1080 by choice, and
-  dynamic resolution that steps down while the GPU falls behind. Docking and
-  undocking switch at once.
-- **Gyro aiming:** with the gyroscope all the time or only while zoomed in,
-  from the console in the hands, a Pro Controller or a Joy-Con, with
-  sensitivity and inversion of its own. Each local player reads their own
-  controller.
-- **Maps:** the Xbox disc's campaign and multiplayer maps, unpacked from a
-  disc image by the console itself; Halo PC's Custom Edition maps too, in
-  `custom_maps/`.
-- **Menus:** Chupathingy's, with the console's rows added in Video Setup
-  (RESOLUTION LIMIT, DYNAMIC RESOLUTION, CPU CLOCK) and the GYRO page in
-  Controls Setup. There is no QUIT: the HOME button is the way out.
-- **Updates itself:** a release build looks for a newer release when it
-  starts and offers it (`update.auto` turns that off).
-- **Not yet:** the shared shader keys that would make a new console's first
-  start quicker.
+The newest release is
+[0.8.1d (build 6)](https://github.com/ChupathingyCE/warthog-switch/releases/latest).
+The Build workflow builds every change on main, and its artifact is the
+newest test build.
+
+What works:
+
+- Online Games (**Multiplayer > ONLINE GAMES**) lists the games online and
+  joins them, dedicated servers too.
+- It speaks the game's wire, `chupa-41a`. It joins hosts of network versions
+  11 through 41, OpenCE's newest, as the signed compatibility table allows.
+- You can host from the console, with up to 48 players. That is the most it
+  was measured to hold.
+- Other players see you as a Switch. A host gives a Switch games of 16
+  players unless it sets `network.platform_limits = "off"`.
+- System Link joins PC hosts and consoles on your network.
+- Link Profile links the console to your Delta profile on
+  [stats.chupathingy.org](https://stats.chupathingy.org). Your games then
+  count toward you.
+- The game draws 720 lines by default. It is scaled to 1280x720 in your
+  hands or 1920x1080 docked. Docking and undocking switch at once.
+- Gyro aiming works from the console in your hands, a Pro Controller or a
+  Joy-Con.
+- The Xbox disc's campaign and multiplayer maps play, and so do Halo PC's
+  Custom Edition maps.
+- A release build checks for a newer release when it starts and offers it.
+
+Not yet: the shared shader keys that would make a new console's first start
+quicker.
 
 ## What you need
 
-- **A Switch that runs homebrew** (Atmosphère), with about 2 GB free on its
-  SD card for the maps and the shader cache.
-- **Your own Halo disc's maps.** The North American (NTSC) release,
-  01.10.12.2276, as every Chupathingy build and server uses. The PAL disc's
+- A Switch that runs homebrew (Atmosphère).
+- About 2 GB free on the SD card, for the maps and the shader cache.
+- Your own Halo disc's maps. Use the North American (NTSC) release,
+  01.10.12.2276, as every Chupathingy build and server does. The PAL disc's
   maps work too. Warthog never provides maps, disc images or other game
   data, and never links to them. Don't share yours.
-- **For online play:** a certificate bundle, `cacert.pem` (Mozilla's from
-  [curl.se/docs/caextract.html](https://curl.se/docs/caextract.html), or your
-  computer's `ca-certificates.crt`), beside the game. The console keeps no
-  certificate authorities where the game list's HTTPS can find them.
-- **To build it** (below): devkitPro with devkitA64, libnx, deko3d and the
-  Switch portlibs; the Android NDK, which builds the game's half; Python 3,
-  Ninja and clang.
+- For online play, a certificate bundle called `cacert.pem`. Mozilla's is at
+  [curl.se/docs/caextract.html](https://curl.se/docs/caextract.html). Your
+  computer's `ca-certificates.crt` works too. The console has none that the
+  game list can use.
 
-## Install
+## Getting started
 
-1. Get the card's folder: the latest release's `halo-switch-release.zip`
-   from [Releases](https://github.com/ChupathingyCE/warthog-switch/releases),
-   the Build workflow's artifact on this repository's
-   Actions page, or your own build (see "Building it yourself").
-2. Unzip it to `sd:/switch/ChupaThingyCE/` on the card, so `halo.nro` (the
-   program), `halo_guest.elf` (the game), `menus/` and `brokers.txt` are in
-   that folder.
-3. Add your maps, one of two ways. Copy the `maps` folder from your own disc
-   into the folder, as `sd:/switch/ChupaThingyCE/maps/`. Or put the disc
-   image in the folder as `halo.iso` (`.xiso` and `.bin` work too), and the
-   game unpacks `maps/` from it on its first start: about 1.7 GB, a few
-   minutes, with the log saying how far it has got.
-4. For online play, put `cacert.pem` in the same folder.
-5. Start `halo.nro` from the Homebrew Menu. The first start writes
-   `config.toml` and compiles the shaders it needs; the loading screen waits
-   for them, and the shader cache on the card keeps them for the next time.
+### Install
 
-With a build of your own, `tools/switch_package.py --maps /path/to/maps
---out DIR` lays the folder out with your maps, and `tools/switch_deploy.py`
-sends a build to a console running an FTP server (the Homebrew Menu's ftpd,
-or the sys-ftpd module, which stays up while the game runs).
+1. Download `halo-switch-release.zip` from the
+   [latest release](https://github.com/ChupathingyCE/warthog-switch/releases/latest).
+2. Unzip it to `sd:/switch/ChupaThingyCE/` on the SD card. The folder now
+   has `halo.nro`, `halo_guest.elf`, `menus/` and `brokers.txt`.
+3. Add your maps. Copy the `maps` folder from your own disc to
+   `sd:/switch/ChupaThingyCE/maps/`.
+4. Or put your disc image in the folder as `halo.iso` instead. `.xiso` and
+   `.bin` work too. The first start unpacks `maps/` from it. That writes
+   about 1.7 GB and takes a few minutes.
+5. Put `cacert.pem` in the same folder, for online play.
+6. Start `halo.nro` from the Homebrew Menu.
 
-## Useful log files
+The first start writes `config.toml` and compiles the shaders the menus need.
+The loading screen waits for them. The shader cache on the card keeps them
+for next time.
 
-The program writes its log to `halo.log` and the game to `logs/debug.txt`,
-both in the game's folder. Attach them to bug reports, or send them at
-[dump.chupathingy.org](https://dump.chupathingy.org) (platform: Switch) and
-give the reference code it shows.
+### Updating
 
-## Known quirks
+A release build checks GitHub for a newer release when it starts and offers
+it. The program is replaced at once. The game and the menu files are
+replaced at the next start. Set `update.auto = false` in `config.toml` to
+turn the check off.
 
-- **The first play of a level.** Shaders the console has not met yet are
-  compiled as a level first needs them; the first seconds of a new level
-  wait on them, and the frame rate can dip while the rest compile in the
-  background. The cache on the card keeps every one, so each happens once.
-- **Checkpoints after a restart.** A checkpoint saved in one run is sometimes
-  not found in the next, and the level starts over from its beginning. Being
-  fixed.
-- **No game list without `cacert.pem`.** ONLINE GAMES draws, but the list
-  cannot be fetched, and the log says so at start.
+To update by hand, unzip the new `halo-switch-release.zip` over the folder.
+Your maps, saves and `config.toml` stay.
+
+Builds you make yourself have no build number, and never check.
+
+### Where things go
+
+Everything is in `sd:/switch/ChupaThingyCE/`:
+
+| What | Where |
+| --- | --- |
+| The program and the game | `halo.nro`, `halo_guest.elf` |
+| Settings | `config.toml` |
+| Retail maps | `maps/` |
+| Custom Edition maps | `maps_ce/` |
+| Saves | `save/` |
+| The game's log | `logs/debug.txt` |
+| The program's log | `halo.log` |
+| Certificates for online play | `cacert.pem` |
+
+### Custom Edition maps
+
+Halo PC's Custom Edition maps go in `sd:/switch/ChupaThingyCE/maps_ce/`.
+Put Custom Edition's `bitmaps.map`, `sounds.map` and `loc.map` in the same
+folder. A map in a subfolder is listed under the folder's name. Campaign
+maps show under CUSTOM SINGLEPLAYER and multiplayer maps under CUSTOM
+MULTIPLAYER. One level of folders is read.
+
+The older `custom_maps/` folder is still read.
+
+When you join a game with a map you don't have, it is downloaded from the
+host while you wait in the lobby.
+
+### The Ultrahand overlay
+
+[OpenCE-Ultrahand](https://github.com/hardran3/OpenCE-Ultrahand) by
+hardran3 is a package for the
+[Ultrahand Overlay](https://github.com/ppkantorski/Ultrahand-Overlay). It
+turns on cheats (god mode, infinite ammo, super jump and more) and reverts
+to the last checkpoint. It also changes V-Sync, interpolation and the frame
+rate display without leaving the game. It needs Ultrahand 2.5.3 or later.
+
+When the overlay is installed, the main menu says "Ultrahand Overlay present
+and enabled". Set `game.overlay_commands = false` in `config.toml` to make
+the game ignore it.
+
+## Settings
+
+The settings are in `sd:/switch/ChupaThingyCE/config.toml`. The first start
+writes it with every setting, commented out at its default. Remove the `# `
+in front of one, change its value and save. Most change at once. The rest
+take effect at the next start.
+
+Most settings are the same as on the PC and Android builds. These are the
+Switch's own:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `display.resolution_limit` | `"720"` | The lines the game draws: `"480"`, `"720"`, `"900"` or `"1080"`. The picture is scaled to the screen. In your hands it draws no more than 720. |
+| `display.dynamic_resolution` | `false` | Draw one step lower while the frame rate falls under 55. It goes back up when there is room. |
+| `display.big_sprite_limit` | `8` | The most big sprites drawn in a frame. A big sprite covers more than half the view. The Xbox drew 11. |
+| `performance.cpu_clock` | `"1785"` | The CPU's speed. `"1785"` is 1.7 GHz. `"1020"` is 1 GHz, which runs cooler and saves battery. `"stock"` leaves it alone. |
+| `input.gyro_aim` | `"false"` | Aim with the gyroscope: `"true"` always, `"zoom"` only while zoomed in, `"false"` never. |
+| `input.gyro_sensitivity_horizontal` | `1.0` | How far the view turns left and right with the gyroscope, from 0.25 to 10. |
+| `input.gyro_sensitivity_vertical` | `1.0` | How far the view turns up and down with the gyroscope, from 0.25 to 10. |
+| `input.gyro_invert_horizontal` | `false` | Turn the gyroscope's left and right around. |
+| `input.gyro_invert_vertical` | `false` | Turn the gyroscope's up and down around. |
+| `game.overlay_commands` | `true` | Take commands from the Ultrahand overlay. |
+| `game.terminal_output` | `"menus"` | Where the game's messages show at the bottom left: `"menus"`, `"console"`, `"always"` or `"none"`. |
+| `debug.log_files` | `true` | Write `debug.txt` and `halo.log`. With `false` nothing is kept to say what went wrong. |
+| `update.auto` | `true` | Check for a newer release at start. |
+
+Video Setup has rows for the resolution limit, dynamic resolution and the
+CPU clock. The gyro settings are on the GYRO page of Controls Setup. There
+is no QUIT on the main menu. Press HOME to leave.
+
+The other `debug.*` settings in the file are for finding renderer and
+performance problems. Leave them at their defaults unless someone asks you
+to change one. [port/switch/README.md](port/switch/README.md) explains them.
+
+## Reporting problems
+
+1. Right after the problem, copy `logs/debug.txt` and `halo.log` from
+   `sd:/switch/ChupaThingyCE/` to your computer.
+2. Send them at [dump.chupathingy.org](https://dump.chupathingy.org), with
+   "Switch" as the platform. You get a reference code.
+3. Tell us in #warthog-support on the
+   [Discord](https://discord.gg/chupathingy) what you were doing, and give
+   the code.
+
+## Troubleshooting
+
+- **It says the maps are missing.** The game looks for
+  `sd:/switch/ChupaThingyCE/maps/ui.map`. Check the folder name, or put
+  your disc image in the folder as `halo.iso`.
+- **Online Games shows no games.** Put `cacert.pem` in
+  `sd:/switch/ChupaThingyCE/`. Without it the list can't be fetched, and the
+  log says so at start.
+- **The first play of a level stutters.** Shaders the console hasn't seen
+  yet are compiled when a level first needs them. The cache keeps each one,
+  so it happens once.
+- **A checkpoint is lost after a restart.** A checkpoint saved in one run is
+  sometimes not found in the next, and the level starts over. This is a
+  known bug.
+- **The overlay does nothing.** Check that Ultrahand is 2.5.3 or later, and
+  that `game.overlay_commands` isn't `false`. The main menu says when the
+  game sees the overlay.
 
 ## Building it yourself
 
@@ -153,7 +231,7 @@ repository uses.)
 You need:
 - [devkitPro](https://devkitpro.org) with `devkitA64`, `libnx`, `deko3d`,
   `switch-sdl2`, `switch-mesa` and `switch-libdrm_nouveau`
-  (`sudo dkp-pacman -S --needed devkitA64 libnx switch-sdl2 switch-mesa switch-libdrm_nouveau`).
+  (`sudo dkp-pacman -S --needed devkitA64 libnx deko3d switch-sdl2 switch-mesa switch-libdrm_nouveau`).
 - The Android NDK, for the game's half (`ANDROID_NDK_HOME`, or
   `--android-ndk DIR`).
 - Python 3, [ninja](https://ninja-build.org/) and clang.
@@ -170,6 +248,11 @@ python3 chupathingyce/configure.py --console-port port/switch [--devkitpro DIR] 
 ninja switch                        # build/switch/halo.nro, halo_guest.elf and menus/
 python3 tools/switch_package.py --maps /path/to/maps --out ~/Downloads/warthog-switch
 ```
+
+`tools/switch_package.py` lays out the card's folder with your maps.
+`tools/switch_deploy.py` sends a build to a console running an FTP server.
+That can be the Homebrew Menu's ftpd, or the sys-ftpd module, which stays up
+while the game runs.
 
 `configure.py` is the game's, and `port/switch/build.py` adds the Switch's
 targets to it; the game's
@@ -242,6 +325,8 @@ not be part of our community.
   contributors.
 - The Switch port: [thelinkin3000](https://github.com/thelinkin3000), its
   maintainer, and **puginatux**.
+- The Ultrahand package: [hardran3](https://github.com/hardran3)
+  ([OpenCE-Ultrahand](https://github.com/hardran3/OpenCE-Ultrahand)).
 - The toolchain and libraries: [devkitPro](https://devkitpro.org) (devkitA64,
   libnx, deko3d, UAM), SDL2, Mesa, and the libraries the game uses, with
   their licenses in the game's `port/third_party`.
