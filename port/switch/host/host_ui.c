@@ -17,7 +17,8 @@ background from the game's shell (a rounded box with a 4-unit blue border),
 rendered with nanosvg and stretched as nine pieces - the corners as drawn, the
 edges and the middle stretched - so its corners meet the screen's corners, or a
 row's, with the border and the rounding unchanged. The text is stb_truetype's:
-Cyborg Interface Gothic for titles and Overpass for the rest (port/assets/fonts).
+Chupathingy Titles for titles, as the game's classic titles, and Overpass for
+the rest (port/assets/fonts).
 
 Built with HOST_UI_PREVIEW on a desktop, the same drawing writes each screen to
 a .ppm file instead, so the screens can be looked at without a console.
@@ -502,7 +503,7 @@ int host_ui_open(void)
 	title_data = host_ui_title_font;
 	body_data = host_ui_body_font;
 #else
-	title_data = (const unsigned char *)host_ui_preview_file("port/assets/fonts/CyborgInterfaceGothic-Regular.ttf", NULL);
+	title_data = (const unsigned char *)host_ui_preview_file("port/assets/fonts/ChupathingyTitles-Regular.ttf", NULL);
 	body_data = (const unsigned char *)host_ui_preview_file("port/assets/fonts/Overpass-750.ttf", NULL);
 #endif
 	if (!stbtt_InitFont(&title_face, title_data, stbtt_GetFontOffsetForIndex(title_data, 0)) ||
