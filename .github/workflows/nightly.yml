@@ -11,6 +11,11 @@ name: Nightly
 # checks run, and no game files or maps are in the package. The tagged test
 # builds (release.yml) are not touched. A manual run can force a build
 # when nothing changed.
+#
+# Publishing is switched on by the repository variable NIGHTLY_PUBLISH set
+# to true (Settings, Secrets and variables, Actions, Variables). Until then
+# the nightly builds and keeps its package as the run's artifact, and
+# publishes no release.
 on:
   schedule:
     - cron: '17 7 * * *'
@@ -79,6 +84,7 @@ jobs:
 
   release:
     needs: [check, build]
+    if: ${{ vars.NIGHTLY_PUBLISH == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
