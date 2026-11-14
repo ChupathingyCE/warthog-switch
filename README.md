@@ -37,35 +37,34 @@ Nintendo's SDK: the port is built with devkitPro's free tools.
 Working. It boots and plays on Switch hardware. The port is maintained by
 [thelinkin3000](https://github.com/thelinkin3000).
 
-The newest release is
-[0.8.1d (build 6)](https://github.com/ChupathingyCE/warthog-switch/releases/latest).
-The Build workflow builds every change on main, and its artifact is the
-newest test build.
-
-What works:
-
-- Online Games (**Multiplayer > ONLINE GAMES**) lists the games online and
-  joins them, dedicated servers too.
-- It speaks the game's wire, `chupa-41a`. It joins hosts of network versions
-  11 through 41, OpenCE's newest, as the signed compatibility table allows.
-- You can host from the console, with up to 48 players. That is the most it
-  was measured to hold.
-- Other players see you as a Switch. A host gives a Switch games of 16
-  players unless it sets `network.platform_limits = "off"`.
-- System Link joins PC hosts and consoles on your network.
-- Link Profile links the console to your Delta profile on
-  [stats.chupathingy.org](https://stats.chupathingy.org). Your games then
-  count toward you.
-- The game draws 720 lines by default. It is scaled to 1280x720 in your
-  hands or 1920x1080 docked. Docking and undocking switch at once.
-- Gyro aiming works from the console in your hands, a Pro Controller or a
-  Joy-Con.
-- The Xbox disc's campaign and multiplayer maps play, and so do Halo PC's
-  Custom Edition maps.
-- A release build checks for a newer release when it starts and offers it.
-
-Not yet: the shared shader keys that would make a new console's first start
-quicker.
+- **Network:** the game's wire, `chupa-41a`. Joins hosts of network
+  versions 11 through 41, as the signed compatibility table allows. OpenCE's
+  current hosts (44) need the game submodule moved to 0.9.1.
+- **Online:** **Multiplayer > ONLINE GAMES** lists the games online and
+  joins them through the PCs' own tunnel, dedicated servers too. Hosting from
+  the console works, up to 48 players, the most it was measured to hold.
+  **Link Profile** links the console to your Delta profile on
+  [stats.chupathingy.org](https://stats.chupathingy.org), so your games count
+  toward you.
+- **System Link:** joins PC hosts and consoles on your network.
+- **Display:** 720 lines by default, drawn and scaled to the console's
+  1280x720 in the hands or 1920x1080 docked; 480, 900 or 1080 by choice, and
+  dynamic resolution that steps down while the GPU falls behind. Docking and
+  undocking switch at once.
+- **Gyro aiming:** with the gyroscope all the time or only while zoomed in,
+  from the console in the hands, a Pro Controller or a Joy-Con, with
+  sensitivity and inversion of its own. Each local player reads their own
+  controller.
+- **Maps:** the Xbox disc's campaign and multiplayer maps, unpacked from a
+  disc image by the console itself; Halo PC's Custom Edition maps too, in
+  `custom_maps/`.
+- **Menus:** Chupathingy's, with the console's rows added in Video Setup
+  (RESOLUTION LIMIT, DYNAMIC RESOLUTION, CPU CLOCK) and the GYRO page in
+  Controls Setup. There is no QUIT: the HOME button is the way out.
+- **Updates itself:** a release build looks for a newer release when it
+  starts and offers it (`update.auto` turns that off).
+- **Not yet:** the shared shader keys that would make a new console's first
+  start quicker.
 
 ## What you need
 
@@ -86,6 +85,8 @@ quicker.
 
 1. Download `halo-switch-release.zip` from the
    [latest release](https://github.com/ChupathingyCE/warthog-switch/releases/latest).
+   For the newest test build, take the Build workflow's artifact from this
+   repository's Actions page instead.
 2. Unzip it to `sd:/switch/ChupaThingyCE/` on the SD card. The folder now
    has `halo.nro`, `halo_guest.elf`, `menus/` and `brokers.txt`.
 3. Add your maps. Copy the `maps` folder from your own disc to
@@ -311,9 +312,9 @@ is in [LICENSE](LICENSE).
 ## Support
 
 Chupathingy is free and always will be. Support through
-[Ko-fi](https://ko-fi.com/milenko) goes to running the site and the servers. If
-there's a specific developer or port you'd like to support, ask them: they may
-not be part of our community.
+[Ko-fi](https://ko-fi.com/milenko) or [Patreon](https://www.patreon.com/c/chupathingy)
+goes to running the site and the servers. If there's a specific developer or
+port you'd like to support, ask them: they may not be part of our community.
 
 ## Credits
 

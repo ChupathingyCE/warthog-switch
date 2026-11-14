@@ -17,7 +17,7 @@ background from the game's shell (a rounded box with a 4-unit blue border),
 rendered with nanosvg and stretched as nine pieces - the corners as drawn, the
 edges and the middle stretched - so its corners meet the screen's corners, or a
 row's, with the border and the rounding unchanged. The text is stb_truetype's:
-OpenCE for titles and Overpass for the rest (port/assets/fonts).
+Cyborg Interface Gothic for titles and Overpass for the rest (port/assets/fonts).
 
 Built with HOST_UI_PREVIEW on a desktop, the same drawing writes each screen to
 a .ppm file instead, so the screens can be looked at without a console.
@@ -250,7 +250,7 @@ static stbtt_fontinfo title_face, body_face;
 static struct font title_font, body_font, small_font;
 
 /* a font whose capitals are capitals pixels tall (0: one whose ascent to
-descent is pixels), OpenCE's being much taller than its metrics say */
+descent is pixels), so a title's capitals are one size whatever its font's metrics */
 static int font_make(struct font *font, stbtt_fontinfo *face, float pixels, float capitals)
 {
 	int ascent, descent, gap, index;
@@ -502,7 +502,7 @@ int host_ui_open(void)
 	title_data = host_ui_title_font;
 	body_data = host_ui_body_font;
 #else
-	title_data = (const unsigned char *)host_ui_preview_file("port/assets/fonts/OpenCE-Regular.ttf", NULL);
+	title_data = (const unsigned char *)host_ui_preview_file("port/assets/fonts/CyborgInterfaceGothic-Regular.ttf", NULL);
 	body_data = (const unsigned char *)host_ui_preview_file("port/assets/fonts/Overpass-750.ttf", NULL);
 #endif
 	if (!stbtt_InitFont(&title_face, title_data, stbtt_GetFontOffsetForIndex(title_data, 0)) ||
