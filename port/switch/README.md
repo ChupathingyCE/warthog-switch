@@ -21,9 +21,9 @@ renderer's place in the image.
 
 The host (`host/`) is the game's Android host made into a homebrew program,
 linked by devkitA64 against libnx, SDL2, Mesa and deko3d. Refer to the game's
-[port/android/README.md](../../chupathingyce/port/android/README.md) for the
+[port/android/README.md](https://github.com/ChupathingyCE/chupathingyce/blob/main/port/android/README.md) for the
 guest and the platform layer, and
-[port/linux/README.md](../../chupathingyce/port/linux/README.md) for the
+[port/linux/README.md](https://github.com/ChupathingyCE/chupathingyce/blob/main/port/linux/README.md) for the
 platform layer the two share.
 
 The host changes are these:
@@ -63,7 +63,7 @@ You do not need the Xbox SDK. You need the tools of the game's Linux build
 To install the devkitPro packages:
 
 ```
-sudo dkp-pacman -S --needed devkitA64 libnx switch-sdl2 switch-mesa switch-libdrm_nouveau
+sudo dkp-pacman -S --needed devkitA64 libnx deko3d switch-sdl2 switch-mesa switch-libdrm_nouveau
 ```
 
 ## Build and install
@@ -170,8 +170,9 @@ The game checks for `sdmc:/switch/ChupaThingyCE/maps/ui.map` and, with no image
 either, refuses to start and says so. Saves go in `sdmc:/switch/ChupaThingyCE/save/`,
 and the settings file `config.toml` goes in `sdmc:/switch/ChupaThingyCE/`.
 
-Custom Edition maps go in `sdmc:/switch/ChupaThingyCE/custom_maps/`, with
-`bitmaps.map`, `sounds.map` and `loc.map` in that folder. A map in a
+Custom Edition maps go in `sdmc:/switch/ChupaThingyCE/maps_ce/`, with
+`bitmaps.map`, `sounds.map` and `loc.map` in that folder. The older
+`custom_maps/` folder is still read. A map in a
 subfolder is listed under the folder's name: campaign maps under CUSTOM
 SINGLEPLAYER, multiplayer maps under CUSTOM MULTIPLAYER. One level of
 folders is read. A map you do not have is downloaded from the other players
@@ -240,6 +241,33 @@ and a cutscene's are drawn on a small copy of the screen and blended over it
 once (`debug.original_zoom` and `debug.original_blur` draw them as the game
 does). Both are changes to the game's own code behind `HALO_SWITCH_CONSOLE`,
 in the `chupathingyce/` submodule as this port pins it.
+
+## Debug settings
+
+These are in `config.toml` on the Switch build only. They are for finding
+renderer and performance problems. Most take effect at the next start.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `debug.log_files` | `true` | Write `logs/debug.txt` and `halo.log`. `false` saves the card a write for each line. |
+| `debug.resolution_uncapped` | `false` | Draw at `display.resolution_limit` even past what the screen shows, scaled down. A Switch Lite can test a docked console's GPU load this way. |
+| `debug.render_thread` | `true` | Turn the game's drawing into GPU commands on a thread of its own, on another core. `false` does it on the game's thread, as before. |
+| `debug.gpu_trace` | `false` | Keep a record of the GPU's last commands, and write it to `halo.log` after a GPU fault. |
+| `debug.gpu_fault_test` | `false` | Make the GPU fault on purpose at the 1200th frame, to test `debug.gpu_trace`. |
+| `debug.gpu_profile` | `false` | Every 300 frames, log the GPU's time for each part of the frame. |
+| `debug.gpu_capture` | `false` | With `debug.gpu_profile`: time one frame in 300 draw by draw, by shader, target and kind of command. |
+| `debug.gpu_glsl_folder` | `""` | A folder to write each shader to, as GLSL named by its hash. The folder must exist. |
+| `debug.gpu_experiment` | `""` | Measure what a change could save: `no_compression`, `no_target_barriers` or `lod_bias`, separated by commas. |
+| `debug.gpu_shader_ranges` | `true` | Leave out pixel shader clamps the values can't need. `false` writes them all, to compare. |
+| `debug.gpu_texture_clip` | `"on"` | Clip shadows cast on the level to their map: `"on"`, `"off"` or `"wide"` (to measure the clip itself). |
+| `debug.gpu_blend_discard` | `true` | Skip blended pixels that would leave the screen unchanged. `false` blends them all, to compare. |
+| `debug.gpu_draw_scissor` | `true` | Draw an object's shadow and a light's pass only where they can change the screen. `false` draws them whole, to compare. |
+| `debug.original_zoom` | `false` | Draw the zoom's blur as the game does, in passes over the whole screen. |
+| `debug.original_blur` | `false` | Draw a cutscene's blur as the game does, in passes over the whole screen. |
+| `debug.texture_verify_compressed` | `false` | Read each compressed texture back after it is written and log where it differs. Slow. |
+| `debug.mic_probe` | `false` | For two minutes from the start, log what the microphone hears. |
+| `debug.profiler` | `false` | Sample where the game's threads are, and write the counts to the profile folder every 20 seconds, for `tools/switch_profile.py`. |
+| `debug.profile_hz` | `500` | The profiler's samples a second. |
 
 ## The memory model
 
