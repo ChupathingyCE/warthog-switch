@@ -50,8 +50,8 @@ built by the Release workflow from a pushed tag (below), and the Build
 workflow builds every change.
 
 - **Network:** the game's wire, `chupa-41a`. Joins hosts of network
-  versions 11 through 41, OpenCE's newest, as the signed compatibility
-  table allows.
+  versions 11 through 41, as the signed compatibility table allows. OpenCE's
+  current hosts (44) need the game submodule moved to 0.9.1.
 - **Online:** **Multiplayer > ONLINE GAMES** lists the games online and
   joins them through the PCs' own tunnel, dedicated servers too. Hosting from
   the console works, up to 48 players, the most it was measured to hold.
@@ -228,9 +228,9 @@ is in [LICENSE](LICENSE).
 ## Support
 
 Chupathingy is free and always will be. Support through
-[Ko-fi](https://ko-fi.com/milenko) goes to running the site and the servers. If
-there's a specific developer or port you'd like to support, ask them: they may
-not be part of our community.
+[Ko-fi](https://ko-fi.com/milenko) or [Patreon](https://www.patreon.com/c/chupathingy)
+goes to running the site and the servers. If there's a specific developer or
+port you'd like to support, ask them: they may not be part of our community.
 
 ## Credits
 
