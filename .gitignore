@@ -6,3 +6,10 @@ build.ninja
 
 # Caches
 __pycache__
+
+# What the build and tools/switch_package.py make, and your own maps
+# (never commit)
+*.nro
+*.nsp
+*.map
+/package/
