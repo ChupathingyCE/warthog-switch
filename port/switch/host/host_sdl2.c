@@ -787,6 +787,32 @@ int host_sdl_gamepad_button(uint32_t gamepad, int button)
 	return object ? SDL_GameControllerGetButton(object, (SDL_GameControllerButton)button) : 0;
 }
 
+/* SDL_GetGamepadID, SDL_GetGamepadVendor and SDL_GetGamepadProduct for the
+guest (port/switch/guest/guest_sdl_switch.c): its instance ID, as the
+events carry it, and its USB IDs; 0 for a handle that is no gamepad */
+uint32_t host_sdl_gamepad_id(uint32_t gamepad)
+{
+	SDL_GameController *object = handle_get(gamepad, _handle_gamepad);
+	SDL_Joystick *joystick = object ? SDL_GameControllerGetJoystick(object) : NULL;
+	SDL_JoystickID id = joystick ? SDL_JoystickInstanceID(joystick) : -1;
+
+	return id < 0 ? 0 : (uint32_t)id;
+}
+
+uint32_t host_sdl_gamepad_vendor(uint32_t gamepad)
+{
+	SDL_GameController *object = handle_get(gamepad, _handle_gamepad);
+
+	return object ? SDL_GameControllerGetVendor(object) : 0;
+}
+
+uint32_t host_sdl_gamepad_product(uint32_t gamepad)
+{
+	SDL_GameController *object = handle_get(gamepad, _handle_gamepad);
+
+	return object ? SDL_GameControllerGetProduct(object) : 0;
+}
+
 int host_sdl_gamepad_type(uint32_t gamepad)
 {
 	SDL_GameController *object = handle_get(gamepad, _handle_gamepad);

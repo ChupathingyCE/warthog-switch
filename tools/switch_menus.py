@@ -40,7 +40,6 @@ card beside the program.
 """
 
 import argparse
-import copy
 import sys
 from pathlib import Path
 
@@ -101,28 +100,39 @@ QUIT_HANDLERS = {'<on event="back" open="chupathingy/quit_screen"/>': '<on event
 
 
 def switch_rows(rows: list) -> list:
-    """the rows the Switch shows, with no platform: the desktop's left out,
-    Android's but the few it shares, and the rest for every platform"""
+    """the rows the Switch shows, with no platform: a row's platform names
+    the platforms it is on, separated by spaces (port_settings.py). The
+    Switch keeps the rows for every platform and those naming "switch";
+    of Android's alone, only the few it shares (its game is built as
+    Android's); the desktop's and the consoles' it leaves out"""
     kept = []
     for row in rows:
         label, setting, choices, help_text, platform, *named = row
-        if platform == "desktop" or setting in ROWS_LEFT_OUT:
+        if setting in ROWS_LEFT_OUT:
             continue
-        if platform == "android" and setting not in ANDROID_ROWS_KEPT:
-            continue
-        kept.append((label, setting, choices, help_text, None, *named))
+        names = platform.split() if platform else None
+        if names is not None and "switch" not in names:
+            if "android" not in names or setting not in ANDROID_ROWS_KEPT:
+                continue
+        if isinstance(row, port_settings.Action):
+            kept.append(port_settings.Action(label, named[0], choices, help_text, None))
+        else:
+            kept.append((label, setting, choices, help_text, None, *named))
     return kept
 
 
 def switch_spec(spec: dict, extra_rows: list) -> dict:
     """a screen's spec with the Switch's rows: the others' pared down and
-    its own added, with no row taking another's place"""
-    spec = copy.deepcopy(spec)
+    its own added, with no row taking another's place, and no nested list
+    left with no rows. (A shallow copy: the rows are tuples, replaced, and
+    an Action, a tuple of its own kind, does not deep-copy.)"""
+    spec = dict(spec)
     spec["rows"] = switch_rows(spec["rows"]) + extra_rows
     # (rows that take the place of a desktop row, which is not here)
     spec["same_place"] = []
-    spec["views"] = [(name, label, help_text, switch_rows(rows))
-                     for name, label, help_text, rows in spec.get("views", [])]
+    views = [(name, label, help_text, switch_rows(rows))
+             for name, label, help_text, rows in spec.get("views", [])]
+    spec["views"] = [view for view in views if view[3]]
     return spec
 
 

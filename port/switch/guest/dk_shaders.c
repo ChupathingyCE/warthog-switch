@@ -131,8 +131,12 @@ padded to the pixel key's size (the larger of the two) so a record is one
 size whatever it holds. The vertex key's own bytes are the program hash
 then the packed mask, in that order - not the struct's, which has four
 bytes of padding at its end that would otherwise have to be promised zero
-by every caller */
-#define DK_KEY_DATA_SIZE ((unsigned long)sizeof(struct nv2a_pixel_shader_key))
+by every caller. A pixel key's record holds its first 256 bytes, which
+were the whole key when the format was made: the fields the game has added
+since past them (mcc_bump_attenuation, for the OpenGL renderer) and are always 0 under deko3d, so the cards' and
+the shared keys' files keep their format, and a record is read back with
+them 0 (record_key). A key with any of them set is not written (console_append) */
+#define DK_KEY_DATA_SIZE 256UL
 #define DK_VERTEX_KEY_BYTES 12UL
 
 struct dk_key_record
@@ -143,6 +147,8 @@ struct dk_key_record
 	uint8_t data[DK_KEY_DATA_SIZE];
 };
 typedef char dk_key_record_size_check[sizeof(struct dk_key_record) == DK_KEY_RECORD_SIZE ? 1 : -1];
+typedef char dk_key_record_past_data_where_checked[
+	offsetof(struct nv2a_pixel_shader_key, mcc_bump_attenuation) == DK_KEY_DATA_SIZE ? 1 : -1];
 
 struct dk_key
 {
@@ -226,7 +232,11 @@ typedef char dk_pixel_key_alpha_test_samples_where_hashed[
 	offsetof(struct nv2a_pixel_shader_key, alpha_test_samples) == 253 ? 1 : -1];
 typedef char dk_pixel_key_point_threshold_where_hashed[
 	offsetof(struct nv2a_pixel_shader_key, point_threshold) == 254 ? 1 : -1];
-typedef char dk_pixel_key_size_as_hashed[sizeof(struct nv2a_pixel_shader_key) == 256 ? 1 : -1];
+typedef char dk_pixel_key_plasma_model_where_hashed[
+	offsetof(struct nv2a_pixel_shader_key, plasma_model) == 255 ? 1 : -1];
+typedef char dk_pixel_key_mcc_bump_attenuation_where_hashed[
+	offsetof(struct nv2a_pixel_shader_key, mcc_bump_attenuation) == 256 ? 1 : -1];
+typedef char dk_pixel_key_size_as_hashed[sizeof(struct nv2a_pixel_shader_key) == 260 ? 1 : -1];
 
 /* the debug options that change the pixel shaders' GLSL (nv2a_psh_dk.c):
 mixed into their hash when any is set, so a debug run compiles its own
@@ -282,6 +292,14 @@ static uint64_t key_hash(uint32_t stage, const void *data)
 			hash = dk_shader_hash_mix(hash, &key->per_pixel_lighting, sizeof(key->per_pixel_lighting));
 			hash = dk_shader_hash_mix(hash, &key->alpha_test_samples, sizeof(key->alpha_test_samples));
 		}
+		/* (the fields the game added after point_threshold: plasma_model,
+		mcc_bump_attenuation; 0 under deko3d, and then left out, as
+		per_pixel_lighting is) */
+		if (key->plasma_model || key->mcc_bump_attenuation)
+		{
+			hash = dk_shader_hash_mix(hash, &key->plasma_model, sizeof(key->plasma_model));
+			hash = dk_shader_hash_mix(hash, &key->mcc_bump_attenuation, sizeof(key->mcc_bump_attenuation));
+		}
 		hash = debug_hash_mix(hash);
 	}
 	return hash;
@@ -291,6 +309,21 @@ static uint64_t key_hash(uint32_t stage, const void *data)
 static unsigned long key_data_size(uint32_t stage)
 {
 	return stage == DK_SHADER_STAGE_VERTEX ? DK_VERTEX_KEY_BYTES : sizeof(struct nv2a_pixel_shader_key);
+}
+
+union dk_key_data
+{
+	struct dk_vertex_key vertex;
+	struct nv2a_pixel_shader_key pixel;
+};
+
+/* a record's key, whole: its bytes, and 0 for the pixel key's fields past
+them (DK_KEY_DATA_SIZE) */
+static const void *record_key(const struct dk_key_record *record, union dk_key_data *data)
+{
+	memset(data, 0, sizeof(*data));
+	memcpy(data, record->data, DK_KEY_DATA_SIZE < sizeof(*data) ? DK_KEY_DATA_SIZE : sizeof(*data));
+	return data;
 }
 
 /* ---------- the key store */
@@ -395,7 +428,8 @@ static unsigned long keys_read_file(const char *xbox_path)
 		{
 			if (record.stage == DK_SHADER_STAGE_VERTEX || record.stage == DK_SHADER_STAGE_PIXEL)
 			{
-				struct dk_key *key = key_add(record.stage, record.map_hash, record.data);
+				union dk_key_data data;
+				struct dk_key *key = key_add(record.stage, record.map_hash, record_key(&record, &data));
 				int shared = !strcmp(xbox_path, DK_KEY_SHARED_FILE);
 
 				if (key)
@@ -406,7 +440,7 @@ static unsigned long keys_read_file(const char *xbox_path)
 				/* (a key console.dkk had first, which keys.dkk has too: the
 				shared file's, loaded with its map - console_compact takes it
 				out of console.dkk) */
-				else if (shared && (key = key_find(key_hash(record.stage, record.data))) != NULL)
+				else if (shared && (key = key_find(key_hash(record.stage, &data))) != NULL)
 					key->shared = 1;
 			}
 		}
@@ -518,11 +552,17 @@ draws share */
 static void console_append(uint32_t stage, uint32_t map_hash, const void *data, unsigned long size)
 {
 	struct dk_key_record record;
+	unsigned long past;
 
+	/* (a key with a field past the record's bytes set is not written: read
+	back, it would be another key. The fields, not the padding after them) */
+	for (past = DK_KEY_DATA_SIZE; past < size && past <= offsetof(struct nv2a_pixel_shader_key, mcc_bump_attenuation); past++)
+		if (((const uint8_t *)data)[past])
+			return;
 	memset(&record, 0, sizeof(record));
 	record.stage = (uint8_t)stage;
 	record.map_hash = map_hash;
-	memcpy(record.data, data, size);
+	memcpy(record.data, data, size < DK_KEY_DATA_SIZE ? size : DK_KEY_DATA_SIZE);
 	pthread_mutex_lock(&append_lock);
 	if (!append_started)
 	{
@@ -831,11 +871,12 @@ static void console_compact(void)
 		while (fread(&record, sizeof(record), 1, file) == 1)
 		{
 			struct dk_key *key;
+			union dk_key_data data;
 			unsigned long index;
 
 			if (record.stage != DK_SHADER_STAGE_VERTEX && record.stage != DK_SHADER_STAGE_PIXEL)
 				continue;
-			key = key_find(key_hash(record.stage, record.data));
+			key = key_find(key_hash(record.stage, record_key(&record, &data)));
 			if (!key)
 				continue;
 			if (key->shared)

@@ -336,6 +336,7 @@ symbols in this file:
 #include "cseries/profile.h"
 #include "cseries/cseries_windows.h"
 #include "main.h"
+#include "mcc_skulls.h" /* port: MCC's skulls on MCC maps */
 #include "real_math.h"
 #include "game.h"
 #include "game_engine.h"
@@ -397,6 +398,11 @@ symbols in this file:
 #include "interface/marketing_and_strategic_business_development.h"
 #endif
 #include "halo_perf_log.h" /* port: console.perf_log */
+#include "plasma_lighting.h" /* port: port/linux/game/plasma_lighting.c */
+#include "mcc_cache.h"
+#include "mcc_main.h"
+#include "stubbs_mode.h" /* port: port/linux/game/stubbs_mode.c */
+#include "stubbs_campaign.h" /* port: port/linux/game/stubbs_campaign.c */
 
 /* port: the main loop's stage, for the console's bring-up watchdog
 (port/xbox/src/xbox_port.c); nothing elsewhere */
@@ -422,6 +428,13 @@ enum
 {
 	_text_justification_left = 0,
 	_text_justification_right,
+};
+
+/* port: a network game's frame this long or longer is noted in debug.txt
+(milliseconds; a client's connection times out after 15 seconds of silence) */
+enum
+{
+	LONG_NETWORK_FRAME_MILLISECONDS = 2000,
 };
 
 /* ---------- macros */
@@ -688,8 +701,19 @@ void overlay_commands_update(void);
 void audio_probe_update(unsigned char main_menu_loaded, float seconds);
 void team_change_update(void);
 #endif
+#ifdef HALO_GAME_BROWSER
+void host_rules_update(void);
+void party_teams_update(void);
+void map_share_update(void);
+#ifdef HALO_HOST_MAP_DOWNLOADS
+void browser_screen_host_download_update(void);
+#endif
+#endif
 #ifdef HALO_PORT_CHAT
 void chat_update(void);
+#endif
+#ifdef HALO_PORT_VOICE
+void voice_game_update(void);
 #endif
 
 /* ---------- prototypes */
@@ -1418,6 +1442,13 @@ short main_get_solo_level_from_name(
 	char lower_name[128] = { 0 };
 	short level;
 
+	/* port: Stubbs mode's levels, and only those (a pack's map's name has
+	@stubbs: port/linux/game/stubbs_campaign.c) */
+	if (stubbs_mode_active())
+		return stubbs_campaign_level_from_name(name, NONE);
+	if (mcc_level_name(name))
+		return NONE;
+
 	/* port: a Halo PC map (name@ce, @pc or @md) is never one of the
 	campaign's levels, whatever its name holds (OpenCE's build-145 found
 	this of its Custom Edition maps) */
@@ -1464,6 +1495,9 @@ char const *main_get_solo_level_name(
 
 	if (level >= 0 && level < NUMBEROF(scenario_paths))
 		result = scenario_paths[level];
+	/* port: Stubbs mode's levels (port/linux/game/stubbs_campaign.c) */
+	if (stubbs_mode_active())
+		result = stubbs_campaign_level_name(level, result);
 
 	return result;
 }
@@ -1610,6 +1644,8 @@ static void main_new_map(
 	}
 	else
 	{
+		if (mcc_main_load_failed(options->map_name))
+			return;
 		error(_error_immediate, "game_load() failed.");
 	}
 
@@ -1647,6 +1683,19 @@ static void main_new_map(
 static void main_change_map_name(
 	void)
 {
+	/* port: an MCC level that isn't there (map_name, a stale list's Load
+	Level), asked for from the menus, never leaves them: its reason is in
+	debug.txt and on the main menu, as for a missing map (#1149) */
+	if (main_globals.main_menu_scenario_loaded == TRUE &&
+		!main_globals.map_change_load_timer &&
+		main_globals.connection == _game_connection_local &&
+		mcc_level_name(main_globals.soloplayer_map_name) &&
+		!mcc_cache_require(main_globals.soloplayer_map_name, 0))
+	{
+		main_globals.defer_map_change = FALSE;
+		main_goto_main_menu();
+		return;
+	}
 	if (main_globals.main_menu_scenario_loaded == TRUE)
 	{
 		if (!main_globals.map_change_load_timer)
@@ -1695,12 +1744,21 @@ static void main_change_map_name(
 			options.map_name[NUMBEROF(options.map_name) - 1] = 0;
 			options.difficulty = global_difficulty_level;
 			game_dispose_from_old_map();
-			game_precache_new_map(options.map_name, TRUE);
+			/* port: an MCC level that isn't there goes back to the menus
+			with its reason, as one that fails to load does (#1149) */
+			if (!game_precache_new_map(options.map_name, TRUE) && mcc_main_load_failed(options.map_name))
+			{
+				main_globals.map_change_load_timer = 0;
+				return;
+			}
 			game_unload();
 			main_new_map(&options);
 
+			/* port: (Stubbs mode's last two levels are past the ten of Halo's
+			profile) */
 			for (local_player_index = 0;
-				local_player_index < player_spawn_count;
+				local_player_index < player_spawn_count &&
+					(!stubbs_mode_active() || main_get_current_solo_level() < NUMBER_OF_SINGLE_PLAYER_LEVELS);
 				local_player_index++)
 			{
 				player_profile_save_last_level_played(local_player_index);
@@ -1990,6 +2048,9 @@ void main_load_ui_scenario(
 void main_roll_credits(
 	void)
 {
+	/* port: standalone MCC scenarios finish through their own menu transition. */
+	if (mcc_main_map_completed())
+		return;
 	error(_error_silent, "congratulations, you won the game!");
 	main_menu_load();
 	game_end_credits_start();
@@ -2260,7 +2321,10 @@ static void main_lost_map_private(
 		they were at the last checkpoint, without a revert. A mission the
 		scripts failed (game_lost, with players still alive: d40's timer,
 		a50's Keyes) does revert, or its failure cutscene would never end. */
-		if (game_connection() != _game_connection_network_server)
+		/* port: MCC's Iron skull: a dead solo player's level restarts (mcc_skulls.c) */
+		if (mcc_skulls_restart_on_death())
+			main_reset_map();
+		else if (game_connection() != _game_connection_network_server)
 			game_state_revert();
 		else if (players_are_all_dead() || !main_coop_host_revert())
 			players_respawn_at_checkpoint();
@@ -2425,6 +2489,14 @@ static void main_won_map_private(
 	short level;
 	short local_player_index;
 
+	/* port: explicit MCC campaigns own their mission order and host decision.
+	 * The Xbox/CE level table below cannot represent package mission identities. */
+	if (mcc_main_campaign_won())
+	{
+		main_globals.won_map = FALSE;
+		return;
+	}
+
 	/* port: when a network co-op level is won, the round ends for everyone as
 	in multiplayer, back to the lobby, and the next round is the campaign's
 	next level (The Maw's: The Pillar of Autumn). A level not in the campaign
@@ -2442,6 +2514,28 @@ static void main_won_map_private(
 	}
 	main_globals.want_to_be_at_main_menu = TRUE;
 	main_globals.won_map = FALSE;
+	/* port: Stubbs mode's next level, its twelve in its order, each
+	profile's finished levels its own (port/linux/game/stubbs_campaign.c);
+	after the last, the main menu */
+	if (stubbs_mode_active())
+	{
+		char const *next;
+
+		/* (the profile's own flags too, for the menus' Load Level list:
+		Halo's ten places hold a10_plaza to c30_lab) */
+		for (local_player_index = 0; local_player_index < player_spawn_count; local_player_index++)
+			player_profile_save_level_completed(local_player_index);
+		next = stubbs_campaign_level_won(main_globals.soloplayer_map_name, player_spawn_count);
+
+		if (next)
+		{
+			main_set_map_name(next);
+			main_disallow_persistent_storage();
+		}
+		else
+			main_goto_main_menu();
+		return;
+	}
 	level = main_get_solo_level_from_name(main_globals.soloplayer_map_name);
 	/* port: a level not in the campaign (a Halo PC map's) has no next one,
 	rather than the first */
@@ -2927,7 +3021,9 @@ static void main_setup_connection(
 			NUMBEROF(options.map_name) - 1);
 		options.map_name[NUMBEROF(options.map_name) - 1] = 0;
 		options.difficulty = global_difficulty_level;
-		game_precache_new_map(options.map_name, TRUE);
+		/* port: (as main_change_map_name's, #1149) */
+		if (!game_precache_new_map(options.map_name, TRUE) && mcc_main_load_failed(options.map_name))
+			return;
 		game_dispose_from_old_map();
 		main_new_map(&options);
 	}
@@ -3076,6 +3172,15 @@ static void main_version_watermark_render(
 		shown = system_milliseconds() - main_version_box_shown < 250;
 	else
 		shown = config_boolean("display.version_watermark") && !ui_widgets_active();
+#ifdef HALO_GUIDE
+	{
+		/* (the Delta Guide over it: hidden, not peeking out under its panel) */
+		extern boolean guide_active(void);
+
+		if (guide_active())
+			shown = FALSE;
+	}
+#endif
 	if (!shown)
 		return;
 	font_tag_index = tag_loaded(FONT_GROUP_TAG, "ui\\small_ui");
@@ -3462,7 +3567,7 @@ static void main_game_render(
 			MAIN_STAGE("render: observer_get_camera");
 			observer = observer_get_camera(window->local_player_index);
 			MAIN_STAGE("render: render_interpolation_camera");
-#ifndef HALO_XBOX_CONSOLE
+#ifdef HALO_PORT_FRAMES_BETWEEN_TICKS
 			observer = render_interpolation_camera(window->local_player_index, observer);
 #endif
 		}
@@ -3724,16 +3829,56 @@ void main_loop(
 			/* changing teams during a game (port/linux/game/team_change.c) */
 			team_change_update();
 #endif
+#ifdef HALO_GAME_BROWSER
+			/* the host's rules for its players' extras (port/linux/game/host_rules.c) */
+			host_rules_update();
+			/* a party kept on one team in games this machine hosts
+			(port/linux/game/party_teams.c) */
+			party_teams_update();
+			/* map sharing's host (port/linux/game/map_share_host.c) */
+			MAIN_STAGE("map_share_update");
+			map_share_update();
+#endif
+#ifdef HALO_HOST_MAP_DOWNLOADS
+			/* a player's download of a map from the host, whatever screen is
+			up (port/linux/game/browser_screen.c) */
+			MAIN_STAGE("browser_screen_host_download_update");
+			browser_screen_host_download_update();
+#endif
 #ifdef HALO_PORT_CHAT
 			/* text chat (port/linux/game/chat.c; on a console, its client's
 			part) */
 			MAIN_STAGE("chat_update");
 			chat_update();
 #endif
+#ifdef HALO_PORT_VOICE
+			/* voice chat (port/linux/game/voice_game.c; a dedicated server
+			relays it) */
+			MAIN_STAGE("voice_update");
+			voice_game_update();
+#endif
 			/* the audio probe's scripted recording (port/linux/game/audio_probe.c),
 			on the consoles too */
 			MAIN_STAGE("audio_probe_update");
 			audio_probe_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
+			/* port: a frame of a network game that took seconds (a hitch,
+			a stall of the renderer) noted in debug.txt, nothing having been
+			sent or read meanwhile: why a machine timed out of a game, or
+			another lost it, can then be read */
+			{
+				static unsigned long previous_network_frame_milliseconds;
+				unsigned long now = system_milliseconds();
+
+				if ((main_globals.connection==_game_connection_network_client ||
+					main_globals.connection==_game_connection_network_server) && game_in_progress() &&
+					previous_network_frame_milliseconds &&
+					now-previous_network_frame_milliseconds>=LONG_NETWORK_FRAME_MILLISECONDS)
+				{
+					error(_error_silent, "a frame of %lu ms in a network game (nothing sent or read meanwhile)",
+						now-previous_network_frame_milliseconds);
+				}
+				previous_network_frame_milliseconds = now;
+			}
 			HALO_PERF_BEGIN(_halo_perf_network);
 			connection = main_globals.connection;
 			if (connection==_game_connection_network_client)
@@ -3783,7 +3928,6 @@ void main_loop(
 				void dedicated_server_update(void);
 				void probe_update(void);
 				void game_list_claims_update(void);
-				void game_stats_update(void);
 				void discord_game_update(void);
 
 				MAIN_STAGE("dedicated_server_update");
@@ -3792,8 +3936,18 @@ void main_loop(
 				probe_update();
 				MAIN_STAGE("game_list_claims_update");
 				game_list_claims_update();
-				game_stats_update();
 				discord_game_update();
+			}
+#endif
+#ifdef HALO_PORT_GAME_REPORTS
+			{
+				/* the statistics recorder and a joined game's report
+				(port/linux/game/game_stats.c): the desktop builds' game
+				list, or a console's reports (port/console/reports) */
+				void game_stats_update(void);
+
+				MAIN_STAGE("game_stats_update");
+				game_stats_update();
 			}
 #endif
 			MAIN_STAGE("bink_playback_update");
@@ -3845,7 +3999,7 @@ void main_loop(
 					render_frame = main_globals.main_menu_scenario_loaded ||
 						(main_globals.halt_time_scale &&
 							(game_time_get_paused() || game_time_get_elapsed()>0 || game_time_get_speed()<1.0f));
-#ifndef HALO_XBOX_CONSOLE
+#ifdef HALO_PORT_FRAMES_BETWEEN_TICKS
 					/* frames between ticks too (render_interpolation.c) */
 					if (halo_interpolation_enabled())
 						render_frame = main_globals.main_menu_scenario_loaded || main_globals.halt_time_scale;
@@ -3875,7 +4029,7 @@ void main_loop(
 					MAIN_STAGE("profile_render_start");
 					profile_render_start();
 					MAIN_STAGE("render_interpolation_frame_begin");
-#ifndef HALO_XBOX_CONSOLE
+#ifdef HALO_PORT_FRAMES_BETWEEN_TICKS
 					render_interpolation_frame_begin();
 					MAIN_STAGE("main_game_render");
 					HALO_PERF_BEGIN(_halo_perf_render);
@@ -3889,6 +4043,10 @@ void main_loop(
 					main_game_render((double)main_globals.seconds_elapsed);
 					HALO_PERF_END(_halo_perf_render);
 #endif
+					/* port: the lights the Light effects changed for the
+					frame put back before the next tick reads them
+					(port/linux/game/plasma_lighting.c) */
+					plasma_lighting_frame_end();
 					profile_render_end();
 				}
 			}
