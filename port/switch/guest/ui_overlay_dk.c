@@ -35,6 +35,7 @@ change to copy here.
 #include "platform.h"
 #include "port_config.h"
 #include "text_hires.h"
+#include "text_shown.h"
 #include "dk_commands.h"
 #include "dk_overlay.h"
 #include "dk_shaders.h"
@@ -812,6 +813,77 @@ void ui_overlay_plasma_source(int serial, const unsigned char *pixels, int width
 int ui_overlay_plasma_from_texture(const void *hardware_format)
 {
 	(void)hardware_format;
+	return 0;
+}
+
+/* ---------- names, prompts and medals the game's screens ask for */
+
+/* (text_shown.h's question: whether a font, the context, draws a character,
+itself or through the face that stands in for it: glyph_font) */
+static int font_has(void *context, unsigned int codepoint)
+{
+	int font = (int)(intptr_t)context;
+
+	return codepoint <= ' ' || posix_ui_font_has(glyph_font(font, codepoint), codepoint);
+}
+
+int ui_overlay_text_shown(int font, const char *text, char *out, int size)
+{
+	return text_shown(text, font_has, (void *)(intptr_t)posix_font(font), out, size);
+}
+
+void ui_overlay_name_shown(int font, const char *name, char *out, int size)
+{
+	text_shown_name(name, font_has, (void *)(intptr_t)posix_font(font), out, size);
+}
+
+/* (a game's prompts drawn as the menus' are: the flat HUD buttons are the
+OpenGL overlay's art) */
+float ui_overlay_hud_button(int button, float size, float x, float y, unsigned int color)
+{
+	return ui_overlay_button(button, size, x, y, color);
+}
+
+float ui_overlay_hud_button_width(int button, float size)
+{
+	return ui_overlay_button_width(button, size);
+}
+
+/* (no medal icons: the HUD's medals are lines of its messages, as on a
+build without HALO_MEDAL_ICONS) */
+void ui_overlay_medal(int medal, float x, float y, float size, unsigned int color)
+{
+	(void)medal;
+	(void)x;
+	(void)y;
+	(void)size;
+	(void)color;
+}
+
+int ui_overlay_medals_available(void)
+{
+	return 0;
+}
+
+/* (the plasma is its tint alone here: its threads have no color to take) */
+void ui_overlay_plasma_thread(unsigned int color)
+{
+	(void)color;
+}
+
+/* (no cellwall under deko3d: 0, and the caller draws its plain backdrop, as
+on OpenGL ES 2) */
+int ui_overlay_cellwall(float x, float y, float width, float height, const float motion[4], unsigned int side,
+	unsigned int front, unsigned int fill)
+{
+	(void)x;
+	(void)y;
+	(void)width;
+	(void)height;
+	(void)motion;
+	(void)side;
+	(void)front;
+	(void)fill;
 	return 0;
 }
 

@@ -1311,6 +1311,94 @@ There is no syscall() on the Switch - the console's kernel is reached by
 libnx, not by an instruction - so this is a switch over the few numbers
 those cases actually pass, and an error for the rest. */
 
+/* ---------- files known to be missing
+
+The game asks for files that are not there a great deal: the Online Games
+list asks, for every game it shows, whether this console has its map, in
+each of a family's six places and Custom Edition's three resource maps in
+each of theirs (map_families.c), and asks again every second
+(browser_screen.c's CE_MAP_CHECK_INTERVAL). On the desktop that is a few
+milliseconds; on the card each miss was about 10 ms, so a list of twenty
+games took two seconds to ask about, by which time every answer was a
+second old and was asked again: a frame every two seconds, for as long as
+the list was up. A path found missing is remembered as missing for a few
+seconds, and the guest's own creating, renaming and removing of files
+forgets every one of them at once; a file copied onto the card from outside
+shows within MISSING_SECONDS. */
+
+#define MISSING_ENTRIES 512
+#define MISSING_SECONDS 5
+#define MISSING_PATH_SIZE 192
+
+struct missing_path
+{
+	uint64_t hash;
+	u64 until_ns;
+	char path[MISSING_PATH_SIZE];
+};
+
+static struct missing_path missing_paths[MISSING_ENTRIES];
+static pthread_mutex_t missing_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static uint64_t missing_hash(const char *path)
+{
+	uint64_t hash = 0xcbf29ce484222325ULL;
+
+	for (; *path; path++)
+		hash = (hash ^ (unsigned char)*path) * 0x100000001b3ULL;
+	return hash;
+}
+
+/* (only a path that names the file by itself: not one relative to a folder
+descriptor the guest holds, and not one too long to keep whole) */
+static int missing_cacheable(long long directory, const char *path)
+{
+	return path && (directory == AT_FDCWD || path[0] == '/' || strchr(path, ':')) &&
+		strlen(path) < MISSING_PATH_SIZE;
+}
+
+static int missing_known(long long directory, const char *path)
+{
+	uint64_t hash;
+	struct missing_path *entry;
+	int known;
+
+	if (!missing_cacheable(directory, path))
+		return 0;
+	hash = missing_hash(path);
+	entry = &missing_paths[hash % MISSING_ENTRIES];
+	pthread_mutex_lock(&missing_lock);
+	known = entry->hash == hash && entry->until_ns > armTicksToNs(armGetSystemTick()) && !strcmp(entry->path, path);
+	pthread_mutex_unlock(&missing_lock);
+	return known;
+}
+
+static void missing_note(long long directory, const char *path)
+{
+	uint64_t hash;
+	struct missing_path *entry;
+
+	if (!missing_cacheable(directory, path))
+		return;
+	hash = missing_hash(path);
+	entry = &missing_paths[hash % MISSING_ENTRIES];
+	pthread_mutex_lock(&missing_lock);
+	entry->hash = hash;
+	entry->until_ns = armTicksToNs(armGetSystemTick()) + MISSING_SECONDS * 1000000000ULL;
+	strcpy(entry->path, path);
+	pthread_mutex_unlock(&missing_lock);
+}
+
+static void missing_forget_all(void)
+{
+	pthread_mutex_lock(&missing_lock);
+	memset(missing_paths, 0, sizeof(missing_paths));
+	pthread_mutex_unlock(&missing_lock);
+}
+
+/* (the guest's O_CREAT: Linux's, 0100) */
+#define GUEST_O_CREAT 0100
+
 static long long host_syscall_inner(long long number, long long a, long long b, long long c,
 	long long d, long long e, long long f)
 {
@@ -1553,12 +1641,22 @@ static long long host_syscall_inner(long long number, long long a, long long b, 
 			}
 			return guest_fd;
 		}
+		if ((int)c & GUEST_O_CREAT)
+			missing_forget_all();
+		else if (missing_known(a, GUEST(const char *, b)))
+			return -ENOENT;
 		host_fd = openat((int)a, GUEST(const char *, b), (int)c, (int)d, (int)e);
 
 		/* newlib's open says -1 and sets errno; the openat above says a
 		 * negated errno itself when the call is one it cannot take. */
 		if (host_fd == -1)
-			return result_of(-errno);
+		{
+			int error = errno;
+
+			if (error == ENOENT && !((int)c & GUEST_O_CREAT))
+				missing_note(a, GUEST(const char *, b));
+			return result_of(-error);
+		}
 		if (host_fd < 0)
 			return result_of(host_fd);
 		guest_fd = guest_descriptor(host_fd);
@@ -1706,9 +1804,14 @@ static long long host_syscall_inner(long long number, long long a, long long b, 
 	{
 		struct stat information;
 		int slot = host_memory_file_path(GUEST(const char *, b));
-		int result = slot >= 0 ? host_memory_file_stat(slot, GUEST(const char *, b), &information) :
-			result_of(fstatat((int)a, GUEST(const char *, b), &information, (int)d));
+		int result;
 
+		if (slot < 0 && missing_known(a, GUEST(const char *, b)))
+			return -ENOENT;
+		result = slot >= 0 ? host_memory_file_stat(slot, GUEST(const char *, b), &information) :
+			result_of(fstatat((int)a, GUEST(const char *, b), &information, (int)d));
+		if (slot < 0 && result == -ENOENT)
+			missing_note(a, GUEST(const char *, b));
 		if (result == 0)
 		{
 			struct guest_kstat *out = GUEST(struct guest_kstat *, c);
@@ -1902,6 +2005,7 @@ static long long host_syscall_inner(long long number, long long a, long long b, 
 		}
 		return result_of(faccessat((int)a, GUEST(const char *, b), (int)c, 0));
 	case SYS_unlinkat:
+		missing_forget_all();
 		if (host_memory_file_path(GUEST(const char *, b)) >= 0)
 			return host_memory_file_unlink(host_memory_file_path(GUEST(const char *, b)), GUEST(const char *, b));
 		/* Linux's AT_REMOVEDIR (0x200), which musl's remove() and rmdir() pass for a folder: newlib numbers its
@@ -1917,8 +2021,10 @@ static long long host_syscall_inner(long long number, long long a, long long b, 
 		}
 		return result_of(unlinkat((int)a, GUEST(const char *, b), (int)c));
 	case SYS_renameat:
+		missing_forget_all();
 		return result_of(guest_renameat((int)a, GUEST(const char *, b), (int)c, GUEST(const char *, d)));
 	case SYS_mkdirat:
+		missing_forget_all();
 		return result_of(mkdirat((int)a, GUEST(const char *, b), (mode_t)c));
 	case SYS_fchmod:
 	{
@@ -2090,6 +2196,11 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 	 * terminal (ioctl TIOCGWINSZ), and none is: the overlay's flags alone
 	 * asked a hundred times a start */
 	if (number == SYS_ioctl && result == -ENOTTY)
+		return result;
+	/* a file looked for and not there is how the game finds where its files
+	 * are (a map in each of its family's places, the Online Games list for
+	 * every game it shows): a line each was most of the time those took */
+	if ((number == SYS_openat || number == SYS_newfstatat || number == SYS_faccessat) && result == -ENOENT)
 		return result;
 	if (result < 0 && result > -4096)
 	{

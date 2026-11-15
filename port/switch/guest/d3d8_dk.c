@@ -1412,6 +1412,17 @@ static BOOL visibility_pending[DK_VISIBILITY_SLOTS];
 /* the host's pixels to a game pixel where each test drew: its count is
 divided by it, the game dividing by its own test's area (lens flares) */
 static float visibility_area[DK_VISIBILITY_SLOTS];
+/* the tests' numbers (the lens flares': rasterizer_lights.c): the last test
+the device ended (0: none yet, never 0 after), and each slot's last. The
+host's count of a slot is its latest test's, as far as it knows, so a slot's
+result is given as of its last test */
+static unsigned long visibility_test_number;
+static unsigned long visibility_slot_number[DK_VISIBILITY_SLOTS];
+
+unsigned long d3d8_visibility_test_number(void)
+{
+	return visibility_test_number;
+}
 
 void WINAPI D3DDevice_BeginVisibilityTest(void)
 {
@@ -1435,6 +1446,10 @@ HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 	command->index = (uint32_t)index;
 	visibility_pending[index] = TRUE;
 	visibility_area[index] = target_scale[0] * target_scale[1];
+	visibility_test_number = (visibility_test_number + 1) & 0xffffffffUL;
+	if (!visibility_test_number)
+		visibility_test_number = 1;
+	visibility_slot_number[index] = visibility_test_number;
 	return S_OK;
 }
 
@@ -1452,6 +1467,8 @@ HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULON
 		/* (in the game's pixels) */
 		*result = visibility_area[index] > 1.0f ? (UINT)(count / visibility_area[index] + 0.5f) : count;
 	}
+	if (time_stamp && visibility_pending[index])
+		*time_stamp = visibility_slot_number[index];
 	return S_OK;
 }
 

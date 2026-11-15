@@ -57,7 +57,7 @@ the default under `HALO_SWITCH_CONSOLE`; "console" is upstream's behaviour and
 the default elsewhere; "none" and "always" as they say. The reference's rule,
 on upstream's `terminal_render` values.
 
-- Base: upstream `74704612`.
+- Base: upstream `2e5eac00` (v0.9.1a).
 - Upstream: pull request to be opened (the setting with its "console"
   default changes nothing on the desktop; a console build could turn
   "menus" on through a capability of `halo_console_features.h`).
@@ -68,8 +68,8 @@ The call of `overlay_commands_update` after `telnet_console_process` in both
 main loops (the pregame's and the game's), and its prototype. For
 `port/linux/game/overlay_commands.c`.
 
-Keep it in step with the game's own: `first_person_field_of_view_widened`
-(game 5b237e733, the screen fog's canopy redraw) was added here 2026-11-07.
+- Base: upstream `2e5eac00` (v0.9.1a), whose own
+  `first_person_field_of_view_widened` replaced the copy added here 2026-11-07.
 
 ## port/linux/src/port_config.h
 
@@ -91,7 +91,24 @@ for `port/linux/game/overlay_commands.c`; and `game.terminal_output`, for
 `source/interface/terminal.c`. Each goes upstream with the override that
 reads it.
 
-- Base: upstream `74704612`.
+- Base: upstream `2e5eac00` (v0.9.1a). The game's `tools/version.py` names
+  `port_config.c` among the units built with the version's defines; the
+  override gets them too (`port/switch/build.py`).
+
+## port/linux/game/stubbs_functions.c
+
+## port/linux/include/stubbs_functions.h
+
+The game at v0.9.1a does not build for a console. With Stubbs mode left out
+(`HALO_CONSOLE_NO_STUBBS`), the header hid the object "cannot" bits that
+`damage.c` and `units.c` name in every build, and `stubbs_functions.c`
+defined `stubbs_functions_object_cannot` again beside the header's empty
+console one. The enum is moved out of the switch, and the function gets the
+console guard: the v0.9.1a files with that part of upstream's own fix.
+
+- Base: upstream `2e5eac00` (v0.9.1a).
+- Upstream: fixed on main by ChupathingyCE/chupathingyce 9666c96d (in #1287).
+  Both go once the submodule is at a release that has it.
 
 The first was `source/memory/data.c` (the data arrays' address under the
 moved window, for checkpoints, cutscene skips and the dynamic lights), from

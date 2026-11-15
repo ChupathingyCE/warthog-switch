@@ -32,3 +32,8 @@ host_dk_gpu_frame_us
 # the high-res HUD's sheets, decoded by the host (port/switch/host/host_dk_hud.c):
 # png and tag are guest addresses
 host_dk_hud_ready
+# the gamepad's instance ID and USB IDs (port/switch/host/host_sdl2.c), for
+# port/switch/guest/guest_sdl_switch.c's SDL_GetGamepadID, _Vendor, _Product
+host_sdl_gamepad_id
+host_sdl_gamepad_vendor
+host_sdl_gamepad_product

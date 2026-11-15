@@ -757,15 +757,21 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             continue
         if source.name.startswith("posix_") or source.name in GUEST_HOST_ONLY or source.name in OPENGL_ONLY:
             continue
+        # (an override first: a unit of the version's, port_config.c among
+        # them since the game's tools/version.py named it, is overridden with
+        # the version's defines too, not built from the game's file)
+        override = override_of(source, f"port/linux/src/{source.name}")
+        version_cflags = ""
         if source.name in VERSION_SOURCES:
             # (the game's version, channel and commit, as Android's guest has
             # them: tools/version.py; the main menu's version line and the logs)
-            objects.append(guest_object(source, f"{platform_cflags} "
-                                                f"{updater_defines(getattr(sln, 'port_release', False))}"))
-            continue
-        override = override_of(source, f"port/linux/src/{source.name}")
+            version_cflags = f" {updater_defines(getattr(sln, 'port_release', False))}"
         if override:
-            objects.append(guest_object(override, f"{platform_cflags} -iquote {_quote(source.parent)}", "overrides"))
+            objects.append(guest_object(override, f"{platform_cflags}{version_cflags} -iquote {_quote(source.parent)}",
+                                        "overrides"))
+            continue
+        if version_cflags:
+            objects.append(guest_object(source, f"{platform_cflags}{version_cflags}"))
             continue
         objects.append(guest_object(source, platform_cflags))
     for source in embedded_sources:
@@ -841,8 +847,11 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     # them); and the shader cache's guest half
     # and the overlay's drawing (the game list's screens: ui_overlay_dk.c,
     # the game's ui_overlay.c with its OpenGL part replaced)
+    # and the SDL3 calls the Android runtime's guest_sdl.c does not answer
+    # (guest_sdl_switch.c), and the game functions the Switch's build calls
+    # but a console's leaves out (game_console_gaps.c)
     for name in ("d3d8_dk.c", "xbox_textures_dk.c", "nv2a_vsh_dk.c", "nv2a_psh_dk.c", "dk_shaders.c",
-                 "ui_overlay_dk.c"):
+                 "ui_overlay_dk.c", "guest_sdl_switch.c", "game_console_gaps.c"):
         objects.append(guest_object(PORT_DIR / "guest" / name, platform_cflags))
     n.build(outputs=image, rule="switch_guest_link", inputs=objects, implicit=[libguestc, linker_script])
 
