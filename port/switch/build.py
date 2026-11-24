@@ -330,6 +330,16 @@ def switch_updater_defines(release: bool) -> str:
     return f'-DHALO_BUILD_NUMBER={int(number)} -DHALO_BUILD_FLAVOR=\\"{flavor}\\"'
 
 
+def _director_sources(game: Path) -> List[Path]:
+    """the director's units: the game's list (tools/host_sources.py), or
+    server/src's for a game from before port/linux/host"""
+    try:
+        from tools.host_sources import director_sources
+    except ImportError:
+        return sorted((game / "server" / "src").glob("*.c"))
+    return director_sources(game)
+
+
 def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     game = port.game
     PORT_DIR = port.root
@@ -732,10 +742,10 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             print(f"Switch: {name} is a unit of the port's own, {overrides_dir / name} "
                   f"(waiting on upstream: {overrides_dir / 'README.md'})")
         objects.append(guest_object(overrides_dir / name, game_cflags, "overrides"))
-    # the dedicated server's director, with the game browser (server/), as
-    # the Android guest has it
+    # the dedicated server's director, with the game browser (the game's
+    # port/linux/host; server/src before it moved), as the Android guest has it
     if getattr(sln, "game_browser", False):
-        for source in sorted((game / "server" / "src").glob("*.c")):
+        for source in _director_sources(game):
             objects.append(guest_object(source, game_cflags))
 
     # the platform layer shared with Linux, and the guest runtime
