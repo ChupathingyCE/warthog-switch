@@ -5,10 +5,13 @@ Game functions the Switch's build calls but the game builds to nothing on a
 console. The game takes it that no console has the game list
 (HALO_GAME_BROWSER: halo_console_features.h, "which no console build has"),
 and the Switch does: so units built for the game list (profile_names.c,
-lobby_screen.c, server_commands.c, network_server_manager.c, probe.c) call
-what a console leaves out (Delta's device identity, the Guide's party and
-friends, Steam, MCC maps). Each answers here as the game would with that
-part away. They go when upstream gates its callers as it gates these.
+lobby_screen.c, server_commands.c, network_server_manager.c, probe.c,
+networks.c) call what a console leaves out (Delta's device identity, the
+Guide's party and friends, Steam, MCC maps); and forge.c, built on a
+console with Forge's hooks away, calls its AI tags and the vehicles' homes. Each answers here as the game would with that
+part away, and only while that part is away (the Guide's and MCC's are
+the Switch's now). They go when upstream gates its callers as it gates
+these.
 */
 
 #include <stdio.h>
@@ -84,8 +87,116 @@ int identity_account_choice(const char *line, int owner, unsigned char *account)
 	return owner ? 1 : 0;
 }
 
+/* the networks' certificates (networks.c, built for the game list, checks a
+network list's issuers with these): none is ever trusted, as a console has
+no Delta identity to check them against. Every issuer is malformed and every
+key weak, so networks.c refuses each list it is handed */
+
+struct identity_issuer;
+
+int identity_parse_issuer(const unsigned char *data, int size, struct identity_issuer *issuer)
+{
+	(void)data;
+	(void)size;
+	(void)issuer;
+	return 0;
+}
+
+int identity_check_issuer(const unsigned char *data, int size, const unsigned char (*roots)[32], int root_count,
+	unsigned long now, struct identity_issuer *issuer)
+{
+	(void)data;
+	(void)size;
+	(void)roots;
+	(void)root_count;
+	(void)now;
+	(void)issuer;
+	return 1; /* IDENTITY_MALFORMED */
+}
+
+int identity_issuer_signed_by(const unsigned char *data, int size, const unsigned char *root)
+{
+	(void)data;
+	(void)size;
+	(void)root;
+	return 0;
+}
+
+int identity_key_weak(const unsigned char *public_key)
+{
+	(void)public_key;
+	return 1;
+}
+
+/* ---------- Forge's AI tags and the vehicles' homes (forge_ai_tags.c and
+game_engine.c's, out under HALO_CONSOLE_NO_FORGE; forge.c is built on a
+console with Forge's hooks away, and calls them). No character is ever
+brought in, and no vehicle has a home Forge took */
+
+#ifdef HALO_CONSOLE_NO_FORGE
+
+unsigned char forge_ai_tags_update(void)
+{
+	return 0;
+}
+
+unsigned char forge_ai_tags_pending(void)
+{
+	return 0;
+}
+
+char const *forge_ai_tags_source_map(long tag_index)
+{
+	(void)tag_index;
+	return NULL;
+}
+
+short forge_ai_tags_faction_count(void)
+{
+	return 0;
+}
+
+unsigned char forge_ai_tags_faction(short faction, char const **name, char const **map)
+{
+	(void)faction;
+	if (name)
+		*name = NULL;
+	if (map)
+		*map = NULL;
+	return 0;
+}
+
+short forge_ai_tags_faction_category(short faction)
+{
+	(void)faction;
+	return -1; /* NONE */
+}
+
+/* (what forge_ai_tags.c says with no characters brought in: every tag is
+the map's own, and the map's are offered) */
+unsigned char forge_ai_tags_offered(long tag_index)
+{
+	(void)tag_index;
+	return 1;
+}
+
+short forge_ai_tags_faction_of(long tag_index)
+{
+	(void)tag_index;
+	return -1; /* NONE */
+}
+
+void game_engine_vehicle_home_forget(long object_index)
+{
+	(void)object_index;
+}
+#endif
+
 /* ---------- the Guide's party and friends (port/linux/src/browser.c, out
-under HALO_CONSOLE_NO_GUIDE) */
+under HALO_CONSOLE_NO_GUIDE: the Switch has the Guide, HALO_CONSOLE_GUIDE,
+so these answer only a build that turns it off) */
+
+#ifdef HALO_CONSOLE_NO_GUIDE
 
 struct social_party;
 struct social_state;
@@ -103,6 +214,9 @@ int browser_social_get(struct social_state *state, int *serial)
 	(void)serial;
 	return 0; /* BROWSER_SOCIAL_NONE */
 }
+#endif
+
+#if !HALO_MCC
 
 /* ---------- Steam (port/linux/src/steam_bridge_pipe.c, out with HALO_MCC 0) */
 
@@ -141,3 +255,4 @@ int mcc_workshop_map_title(char const *level, const void *catalog_name, char con
 	(void)size;
 	return 0;
 }
+#endif

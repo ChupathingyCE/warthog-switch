@@ -140,6 +140,7 @@ int host_mman_low_code_mode(void);
  * address out, so that the guest's heap does not grow into a range the rest
  * of the port is relying on. See host_memory.c. */
 int host_memory_range_is_reserved(uint64_t address, uint64_t size);
+int host_memory_mcc_range_free(uint64_t address, uint64_t size);
 
 /* Whether this console will actually map a range at that address. Reports
  * a range as usable only if a mapping was tried and accepted: asking the
@@ -359,6 +360,7 @@ streams hand the guest */
 int host_microphone_open(void);
 int host_microphone_available(void);
 int host_microphone_read(void *data, int length);
+void host_microphone_drop(void);
 void host_microphone_close(void);
 
 /* config.toml's debug.mic_probe: what libnx's audin hears, logged for two

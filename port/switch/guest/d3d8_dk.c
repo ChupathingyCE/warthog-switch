@@ -27,6 +27,9 @@ and presenting go there; a draw and a visibility test do nothing yet.
 #include "dk_overlay.h"
 #ifdef HALO_GAME_BROWSER
 #include "ui_overlay.h"
+#ifdef HALO_CAPTURE
+#include "capture.h"
+#endif
 #endif
 
 #include <math.h>
@@ -3362,6 +3365,113 @@ static void draw_statistics_log(void)
 	memset(&stats, 0, sizeof(stats));
 }
 
+#ifdef HALO_CAPTURE
+/* the player's screenshot (capture.c, controls.screenshot): the same read
+of the back buffer as debug.screenshot_every's, overlay and all, handed to
+capture.c's writer instead of written as a BMP. The frame waits for the GPU,
+once */
+static int screenshot_for_capture;
+
+/* ---------- clips (capture_clips.c, clips.enabled): the back buffer before
+the overlay, scaled by the host's 2D engine and copied to one of these behind
+its frame's fence (DK_COMMAND_CLIP), lent to the encoder once it is there and
+free again when the encoder lets it go. Nothing waits for the GPU */
+#define CLIP_SLOTS 4
+/* (frames with none due before the slots' pixels are let go: 10 s) */
+#define CLIP_IDLE_FRAMES 600
+
+enum
+{
+	_clip_free,
+	_clip_reading,
+	_clip_lent,
+};
+
+static struct
+{
+	unsigned char *pixels;
+	unsigned long room;
+	long width, height;
+	double time;
+	volatile uint32_t ready;
+	volatile int released;
+	int state;
+} clip_slots[CLIP_SLOTS];
+static unsigned long clip_idle;
+
+static void clip_frames(const struct dk_surface *back)
+{
+	struct dk_command_clip *command;
+	long width, height;
+	double time;
+	int index, free_slot = -1;
+
+	for (index = 0; index < CLIP_SLOTS; index++)
+	{
+		if (clip_slots[index].state == _clip_reading)
+		{
+			uint32_t ready = __atomic_load_n(&clip_slots[index].ready, __ATOMIC_ACQUIRE);
+
+			if (ready == 1)
+			{
+				/* (released is set when the encoder does not take it, too) */
+				clip_slots[index].released = 0;
+				clip_slots[index].state = _clip_lent;
+				capture_clip_frame_lend(clip_slots[index].pixels, clip_slots[index].width, clip_slots[index].height,
+					clip_slots[index].width * 4, 0, clip_slots[index].time, &clip_slots[index].released);
+			}
+			else if (ready)
+				clip_slots[index].state = _clip_free;
+		}
+		if (clip_slots[index].state == _clip_lent && __atomic_load_n(&clip_slots[index].released, __ATOMIC_ACQUIRE))
+			clip_slots[index].state = _clip_free;
+		if (clip_slots[index].state == _clip_free && free_slot < 0)
+			free_slot = index;
+	}
+	if (free_slot < 0 || back->kind != DK_SURFACE_COLOR || !back->pixel_width || !back->pixel_height ||
+		!capture_clip_frame_due((long)back->pixel_width, (long)back->pixel_height, &width, &height, &time))
+	{
+		/* (clips off a while: their memory given back) */
+		if (free_slot >= 0 && ++clip_idle == CLIP_IDLE_FRAMES)
+		{
+			for (index = 0; index < CLIP_SLOTS; index++)
+			{
+				if (clip_slots[index].state == _clip_free)
+				{
+					free(clip_slots[index].pixels);
+					clip_slots[index].pixels = NULL;
+					clip_slots[index].room = 0;
+				}
+			}
+		}
+		return;
+	}
+	clip_idle = 0;
+	if (clip_slots[free_slot].room < (unsigned long)width * (unsigned long)height * 4)
+	{
+		free(clip_slots[free_slot].pixels);
+		clip_slots[free_slot].room = (unsigned long)width * (unsigned long)height * 4;
+		clip_slots[free_slot].pixels = malloc(clip_slots[free_slot].room);
+		if (!clip_slots[free_slot].pixels)
+		{
+			clip_slots[free_slot].room = 0;
+			return;
+		}
+	}
+	clip_slots[free_slot].width = width;
+	clip_slots[free_slot].height = height;
+	clip_slots[free_slot].time = time;
+	clip_slots[free_slot].ready = 0;
+	clip_slots[free_slot].state = _clip_reading;
+	command = stream_command(DK_COMMAND_CLIP, sizeof(*command));
+	command->source = *back;
+	command->width = (uint32_t)width;
+	command->height = (uint32_t)height;
+	command->pixels = (uint32_t)(uintptr_t)clip_slots[free_slot].pixels;
+	command->ready = (uint32_t)(uintptr_t)&clip_slots[free_slot].ready;
+}
+#endif
+
 void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destination_rectangle,
 	void *unused, void *unused2)
 {
@@ -3396,6 +3506,11 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		float scale[2];
 
 		surface_describe(&device.back_buffer, FALSE, &back, scale);
+#ifdef HALO_CAPTURE
+		/* (a clip is the game's picture, without DELTA and its toasts, as
+		d3d8_gl.c reads it before its overlay) */
+		clip_frames(&back);
+#endif
 		if (back.kind == DK_SURFACE_COLOR && back.pixel_width && back.pixel_height)
 			ui_overlay_present(0, 0, (int)back.pixel_width, (int)back.pixel_height, (int)back.pixel_width,
 				(int)back.pixel_height);
@@ -3416,6 +3531,16 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			screenshot_pixels = malloc((unsigned long)screenshot_width * screenshot_height * 4);
 			command->screenshot = (uint32_t)(uintptr_t)screenshot_pixels;
 		}
+#ifdef HALO_CAPTURE
+		else if (capture_screenshot_take() && command->back_buffer.width)
+		{
+			screenshot_width = command->back_buffer.pixel_width;
+			screenshot_height = command->back_buffer.pixel_height;
+			screenshot_pixels = malloc((unsigned long)screenshot_width * screenshot_height * 4);
+			command->screenshot = (uint32_t)(uintptr_t)screenshot_pixels;
+			screenshot_for_capture = screenshot_pixels != NULL;
+		}
+#endif
 	}
 	stream_flush();
 	if (screenshot_pixels)
@@ -3423,8 +3548,21 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		/* (the host writes the pixels as it runs the present, on its render
 		thread: all of it run, and the GPU done) */
 		host_dk_idle();
-		screenshot_write();
-		free(screenshot_pixels);
+#ifdef HALO_CAPTURE
+		if (screenshot_for_capture)
+		{
+			/* (the pixels become capture.c's: R G B A from the top) */
+			screenshot_for_capture = 0;
+			capture_screenshot_submit(screenshot_pixels, (long)screenshot_width, (long)screenshot_height,
+				(long)screenshot_width * 4, 0, 0);
+			screenshot_pixels = NULL;
+		}
+		else
+#endif
+		{
+			screenshot_write();
+			free(screenshot_pixels);
+		}
 		screenshot_pixels = NULL;
 	}
 	/* the host starts the next frame with nothing bound */

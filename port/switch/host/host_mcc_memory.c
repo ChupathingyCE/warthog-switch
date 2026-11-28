@@ -7,7 +7,10 @@ map was linked for, 0x50000000 for MCC's Tool. The Android host's version
 (port/android/host/host_mcc_memory.c) holds the window from start-up so that
 the process's later allocations stay out of it; here everything below 4 GB is
 the guest's own and nothing else maps there by chance (host_mman.c), so the
-window is mapped when a map asks for it and given back when it is done. The
+window is mapped when a map asks for it and given back when it is done; its
+usual address, 0x50000000, is kept free of the Xbox window and the pools from
+the start (host_memory.c, MCC_TAG_BASE), and a map linked elsewhere is mapped
+only where nothing of the port's is. The
 rules on the address and the size are the Android host's.
 */
 
@@ -34,6 +37,12 @@ long long host_mcc_memory_reserve(unsigned int address, unsigned int size)
 	pthread_mutex_lock(&mcc_lock);
 	if (mcc_window)
 		error = -EBUSY;
+	else if (!host_memory_mcc_range_free(address, MCC_TAG_SIZE))
+	{
+		error = -EEXIST;
+		host_logf(HOST_LOG_WARN, "mcc memory: %08x-%08x is the port's (the window, a pool or the image); the map "
+			"cannot load", address, address + MCC_TAG_SIZE);
+	}
 	else
 	{
 		result = mmap(wanted, MCC_TAG_SIZE, PROT_READ | PROT_WRITE,

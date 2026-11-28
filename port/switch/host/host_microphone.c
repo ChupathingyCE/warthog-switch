@@ -232,6 +232,15 @@ int host_microphone_read(void *data, int length)
 	return taken * (int)sizeof(float);
 }
 
+/* drop what it has (voice chat's SDL_ClearAudioStream, and a reopening) */
+void host_microphone_drop(void)
+{
+	pthread_mutex_lock(&microphone.lock);
+	microphone.read = (microphone.read + microphone.count) % MICROPHONE_RING_SAMPLES;
+	microphone.count = 0;
+	pthread_mutex_unlock(&microphone.lock);
+}
+
 void host_microphone_close(void)
 {
 	if (!microphone.open)

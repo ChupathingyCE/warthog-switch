@@ -99,6 +99,14 @@ static int pool_count;
 static pthread_mutex_t memory_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static uint64_t window_base, window_end, window_size;
+/* MCC maps' linked tags (port/linux/src/mcc_memory.c, host_mcc_memory.c):
+64 MB at the address MCC's Tool links them for, 0x50000000, the held range's
+first. The window looks above it first (place_window), and once the window is
+placed it is kept free of it and of the pools, as Custom Edition's tag cache
+is; a window that could go nowhere else still takes it, and MCC maps then
+cannot load */
+#define MCC_TAG_BASE 0x50000000ULL
+#define MCC_TAG_SIZE 0x04000000ULL
 static uint64_t image_base, image_end;
 
 static uint64_t round_up(uint64_t value)
@@ -238,10 +246,22 @@ void host_memory_log_reservations(void)
 			reservations[index].for_a_purpose ? "  (a window)" : "");
 }
 
+/* whether MCC's tags may be mapped at address (host_mcc_memory.c): inside
+the range kept for them, or where nothing of the port's is, reserved or
+mapped. The mapping's "no replace" asks the kernel only about one mapping,
+so a range part over the window or a pool would have replaced theirs */
+int host_memory_mcc_range_free(uint64_t address, uint64_t size)
+{
+	if (address >= MCC_TAG_BASE && address + size <= MCC_TAG_BASE + MCC_TAG_SIZE)
+		return !(address < window_end && window_base < address + size);
+	return !range_claimed(address, size) && !pool_mapped(address, size);
+}
+
 int host_memory_range_is_reserved(uint64_t address, uint64_t size)
 {
 	return range_claimed(address, size);
 }
+
 
 /* the guest image's range, held from the start until the image claims it
 (host_memory_hold_image_range); 0 to 0 when nothing is held */
@@ -701,14 +721,25 @@ static uint64_t place_window(uint64_t size)
 	{
 		uint64_t held = window_hold_base, held_end = window_hold_end;
 		uint64_t from = held > size ? held : size;
+		/* (above MCC's tags first: a 512 MB window has 0x60000000 there,
+		and the range from the hold's start after it) */
+		uint64_t above_mcc = (MCC_TAG_BASE + MCC_TAG_SIZE + alignment - 1) & ~(alignment - 1);
+		int pass = from < above_mcc ? 0 : 1;
 
+		if (pass == 0)
+			from = above_mcc;
 		window_hold_base = window_hold_end = 0;
 		for (attempt = 0; attempt < 32; attempt++)
 		{
 			uint64_t start = find_gap(size, from, alignment);
 
 			if (!start || start + size > held_end)
-				break;
+			{
+				if (pass++)
+					break;
+				from = held > size ? held : size;
+				continue;
+			}
 			from = start + alignment;
 			if (host_can_map_at(start, size) && reserve(start, size, 1) == 0)
 			{
@@ -846,6 +877,12 @@ int host_memory_initialize(uint32_t base, uint32_t size)
 		reserve(HALO_GUEST_WINDOW_BASE, HALO_GUEST_WINDOW_SIZE, 0) != 0)
 		host_logf(HOST_LOG_WARN, "could not keep the window's linked range %08llx free",
 			(unsigned long long)HALO_GUEST_WINDOW_BASE);
+	if (reserve(MCC_TAG_BASE, MCC_TAG_SIZE, 0) != 0)
+	{
+		host_logf(HOST_LOG_WARN, "MCC maps' tag range %08llx-%08llx is taken: they cannot load",
+			(unsigned long long)MCC_TAG_BASE, (unsigned long long)(MCC_TAG_BASE + MCC_TAG_SIZE));
+		log_conflicts(MCC_TAG_BASE, MCC_TAG_SIZE);
+	}
 	host_logf(HOST_LOG_INFO, "Xbox memory window of %u MB at %08llx-%08llx, guest image at %08llx-%08llx",
 		(unsigned int)(window_size / (1024 * 1024)),
 		(unsigned long long)window_base, (unsigned long long)window_end,

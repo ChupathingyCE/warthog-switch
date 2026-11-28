@@ -813,6 +813,47 @@ uint32_t host_sdl_gamepad_product(uint32_t gamepad)
 	return object ? SDL_GameControllerGetProduct(object) : 0;
 }
 
+/* The battery, for the Guide's card (the game's platform_power_state, by
+SDL_GetPowerInfo: port/switch/guest/guest_sdl_switch.c), from the console's
+power service, opened the first time it is asked. The state is SDL3's:
+-1 not known, 1 on battery, 3 charging, 4 charged on the charger; the
+percent -1 when not known. */
+static int power_open(void)
+{
+	static int opened = -1;
+
+	if (opened < 0)
+		opened = R_SUCCEEDED(psmInitialize()) ? 1 : 0;
+	return opened;
+}
+
+int32_t host_power_percent(void)
+{
+	u32 percent = 0;
+
+	return power_open() && R_SUCCEEDED(psmGetBatteryChargePercentage(&percent)) ? (int32_t)percent : -1;
+}
+
+int32_t host_power_state(void)
+{
+	PsmChargerType charger = PsmChargerType_Unconnected;
+	u32 percent = 0;
+
+	if (!power_open() || R_FAILED(psmGetChargerType(&charger)))
+		return -1;
+	if (charger == PsmChargerType_Unconnected)
+		return 1;
+	return R_SUCCEEDED(psmGetBatteryChargePercentage(&percent)) && percent >= 100 ? 4 : 3;
+}
+
+/* A key's keycode, by its scancode, as the host's SDL maps them (the game's
+platform_test_keystroke, by SDL_GetKeyFromScancode). SDL2's keycodes are
+SDL3's for every key the game reads. */
+int32_t host_sdl_key_from_scancode(int32_t scancode)
+{
+	return (int32_t)SDL_GetKeyFromScancode((SDL_Scancode)scancode);
+}
+
 int host_sdl_gamepad_type(uint32_t gamepad)
 {
 	SDL_GameController *object = handle_get(gamepad, _handle_gamepad);
@@ -1325,7 +1366,7 @@ uint32_t host_sdl_open_audio_stream(uint32_t device, const void *spec, uint32_t 
 
 	(void)device;
 	/* one without a callback is voice chat's microphone, which the guest
-	reads (port/linux/src/voice_audio.c: 48 kHz mono floats); the Switch's
+	reads (port/linux/src/voice.c: 48 kHz mono floats); the Switch's
 	SDL2 cannot record, so libnx's audin takes it */
 	if (!callback)
 	{
@@ -1337,6 +1378,19 @@ uint32_t host_sdl_open_audio_stream(uint32_t device, const void *spec, uint32_t 
 			host_logf(HOST_LOG_ERROR, "microphone: asked for format 0x%x, %d channel(s) at %d Hz; it gives "
 				"48 kHz mono floats", (unsigned)guest_spec->format, (int)guest_spec->channels, (int)guest_spec->freq);
 			return 0;
+		}
+		/* (the guest runtime's SDL_DestroyAudioStream never reaches the
+		host, so a microphone voice chat closed is still open here: it is
+		handed back as it is, its samples since dropped) */
+		pthread_mutex_lock(&handle_lock);
+		for (handle = 1; handle < HANDLE_COUNT && handles[handle].type != _handle_microphone; handle++)
+		{
+		}
+		pthread_mutex_unlock(&handle_lock);
+		if (handle < HANDLE_COUNT)
+		{
+			host_microphone_drop();
+			return handle;
 		}
 		if (!host_microphone_open())
 			return 0;
@@ -1410,8 +1464,8 @@ int host_sdl_resume_audio_stream_device(uint32_t stream)
 	return 1;
 }
 
-/* voice chat's microphone (port/linux/src/voice_audio.c), the only stream
-the guest reads or closes */
+/* voice chat's microphone (port/linux/src/voice.c), the only stream the
+guest reads (guest_sdl_switch.c's SDL_GetAudioStreamData and the rest) */
 int host_sdl_get_audio_stream_data(uint32_t stream, void *data, int length)
 {
 	if (!handle_get(stream, _handle_microphone))
@@ -1424,6 +1478,12 @@ int host_sdl_get_audio_stream_available(uint32_t stream)
 	if (!handle_get(stream, _handle_microphone))
 		return -1;
 	return host_microphone_available();
+}
+
+void host_sdl_clear_audio_stream(uint32_t stream)
+{
+	if (handle_get(stream, _handle_microphone))
+		host_microphone_drop();
 }
 
 void host_sdl_destroy_audio_stream(uint32_t stream)

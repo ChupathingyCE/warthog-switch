@@ -608,9 +608,11 @@ static void upload(uint32_t id, uint32_t kind, const struct xgpu_texture_descrip
 	command->levels = (uint32_t)description->levels;
 	/* Halo PC's channel orders, from the resource's D3DCOMMON_PORT_PC_* bits
 	that Warthog's loader writes (xgpu.h), in the swizzle's encoding
-	(dk_commands.h); the Xbox's order otherwise */
-	command->swizzle = description->pc_meter ? DK_SWIZZLE_PC_METER :
-		description->pc_multipurpose ? DK_SWIZZLE_PC_MULTIPURPOSE : swizzle;
+	(dk_commands.h); the Xbox's order otherwise. A Halo PC HUD meter's
+	channels stay where they are: the meter shader reads them there
+	(rasterizer_xbox_dynavobgeom.c, since the game's 0.9.2a), and a static
+	element drawing the same bitmap needs them as they are */
+	command->swizzle = description->pc_multipurpose ? DK_SWIZZLE_PC_MULTIPURPOSE : swizzle;
 	/* (last: it may hand the stream over, which the command is in) */
 	if (decoded)
 		dk_stream_free_after_handover(decoded, total);
@@ -1066,6 +1068,138 @@ static uint32_t texture_entry_result(struct texture_entry *entry, int *kind, str
 	return entry->id;
 }
 
+#if HALO_MCC
+/* ---------- MCC maps' textures (port/linux/src/mcc_texture_bridge.c): their
+pixels are immutable and the bridge's own, never in the Xbox's memory, and a
+header's identity, not its Data word, says which they are. Copies are made
+from them as they are first drawn (as d3d8_vk.inl and d3d8_bgfx.inl make
+theirs: HALO_CONSOLE_OWN_MCC_TEXTURES), one for each palette a palettized
+one is drawn with, and kept until the map lets its headers go
+(xgpu_mcc_texture_unbind) */
+#define MCC_TEXTURE_BUCKETS 512
+
+struct mcc_texture
+{
+	struct mcc_texture *next;
+	const DWORD *resource;
+	unsigned long palette_hash;
+	struct xgpu_texture_description description;
+	uint32_t id;
+	unsigned char kind;
+	BOOL failed;
+};
+
+static struct mcc_texture *mcc_textures[MCC_TEXTURE_BUCKETS];
+
+static unsigned long mcc_bucket(const DWORD *resource)
+{
+	return (unsigned long)((((uintptr_t)resource >> 4) * 2654435761UL) % MCC_TEXTURE_BUCKETS);
+}
+
+/* an MCC header's image (its high-res HUD stand-in's, when it has one and
+the setting is on), as dk_texture_get answers; -1 when resource is not one */
+static long mcc_texture_get(const DWORD *resource, const D3DCOLOR *palette, int *kind,
+	struct xgpu_texture_description *description)
+{
+	struct xgpu_texture_description source;
+	struct mcc_texture *entry;
+	const void *pixels;
+	unsigned long bytes, hash, levels = 1;
+	long hud_asset;
+	uint32_t id;
+
+	if (!xgpu_mcc_texture_source(resource, &source, &pixels, &bytes, &hud_asset))
+		return -1;
+	*description = source;
+	*kind = source.cube_map ? DK_TEXTURE_CUBE : source.depth > 1 ? DK_TEXTURE_3D : DK_TEXTURE_2D;
+	if (hud_asset >= 0 && config_boolean("display.high_res_hud") && (id = hud_image(hud_asset, &levels)) != 0)
+	{
+		*kind = DK_TEXTURE_2D;
+		description->levels = levels;
+		description->hires = TRUE;
+		description->hires_coverage = hud_hires_override_coverage(hud_asset);
+		return (long)id;
+	}
+	hash = source.format == 0x0b ? palette_hash(palette) : 0;
+	for (entry = mcc_textures[mcc_bucket(resource)]; entry; entry = entry->next)
+	{
+		if (entry->resource == resource && entry->palette_hash == hash)
+			break;
+	}
+	if (!entry)
+	{
+		entry = calloc(1, sizeof(*entry));
+		if (!entry)
+		{
+			xgpu_mcc_texture_failed(&source, "no memory for the deko3d renderer's copy");
+			return 0;
+		}
+		entry->resource = resource;
+		entry->palette_hash = hash;
+		entry->description = source;
+		entry->kind = (unsigned char)*kind;
+		entry->id = id_take();
+		entry->next = mcc_textures[mcc_bucket(resource)];
+		mcc_textures[mcc_bucket(resource)] = entry;
+		if (!entry->id || !pixels || bytes < xgpu_texture_face_size(&source) * (source.cube_map ? 6 : 1))
+		{
+			entry->failed = TRUE;
+			xgpu_mcc_texture_failed(&source, entry->id ? "its pixels are short" :
+				"the deko3d renderer has no image number left");
+		}
+		else
+		{
+			if (config_boolean("debug.texture_log"))
+				platform_log("mcc texture upload %p fmt %02lx %lux%lux%lu, %lu levels, kind %u, id %u",
+					(const void *)resource, (unsigned long)source.format, source.width, source.height, source.depth,
+					source.levels, (unsigned)entry->kind, (unsigned)entry->id);
+			upload(entry->id, entry->kind, &entry->description, (const unsigned char *)pixels, palette, 0);
+		}
+	}
+	return entry->failed ? 0 : (long)entry->id;
+}
+
+/* an MCC header going with its map (mcc_texture_bridge_dispose): its copies */
+void xgpu_mcc_texture_unbind(DWORD const *resource)
+{
+	struct mcc_texture **link = &mcc_textures[mcc_bucket(resource)];
+
+	while (*link)
+	{
+		struct mcc_texture *entry = *link;
+
+		if (entry->resource != resource)
+		{
+			link = &entry->next;
+			continue;
+		}
+		*link = entry->next;
+		if (entry->id)
+		{
+			struct dk_command_texture_free *command = dk_stream_command(DK_COMMAND_TEXTURE_FREE, sizeof(*command));
+
+			command->id = entry->id;
+			id_free[id_free_count++] = entry->id;
+		}
+		free(entry);
+	}
+}
+
+/* (the bridge's OpenGL copies, which this renderer never asks for: it makes
+its own, above) */
+BOOL xgpu_mcc_texture_upload(GLuint texture, GLenum target, struct xgpu_texture_description const *description,
+	void const *pixels, unsigned long bytes, D3DCOLOR const *palette)
+{
+	(void)texture;
+	(void)target;
+	(void)description;
+	(void)pixels;
+	(void)bytes;
+	(void)palette;
+	return FALSE;
+}
+#endif
+
 uint32_t dk_texture_get(const DWORD *resource, const D3DCOLOR *palette, int *kind,
 	struct xgpu_texture_description *description)
 {
@@ -1081,6 +1215,14 @@ uint32_t dk_texture_get(const DWORD *resource, const D3DCOLOR *palette, int *kin
 	static int no_cache = -1;
 	unsigned long recent = bucket_index(data, format_word, size_word) % RECENT_TEXTURE_COUNT;
 	unsigned long watch_serial = memory_watch_serial();
+#if HALO_MCC
+	{
+		long mcc = mcc_texture_get(resource, palette, kind, description);
+
+		if (mcc >= 0)
+			return (uint32_t)mcc;
+	}
+#endif
 
 	if (!palettized && recent_textures[recent].entry && recent_textures[recent].data == data &&
 		recent_textures[recent].format_word == format_word && recent_textures[recent].size_word == size_word &&

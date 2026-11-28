@@ -37,7 +37,9 @@ The host changes are these:
 | `host_mman.c` | `mmap`/`mprotect` over the console's memory services |
 | `host_futex.c` | futuxes over libnx's mutex and condition variable |
 | `host_net.c` | the network calls over libnx's sockets; see Internet play |
-| `host_dk.c`, `host_dk_shaders.c`, `host_dk_hud.c` | the deko3d renderer's host half: the frame's commands, the shader cache with UAM, the high-res HUD decoded on a thread |
+| `host_dk.c`, `host_dk_shaders.c`, `host_dk_hud.c` | the deko3d renderer's host half: the frame's commands, the shader cache with UAM, the high-res HUD decoded on a thread, screenshots and clips read back |
+| `host_microphone.c` | voice chat's microphone over libnx's audin |
+| `host_mcc_memory.c`, `host_mcc_preview.c` | MCC maps' 64 MB tag window and their menu pictures |
 
 Third-party code the port alone uses is in `third_party/` with its own
 license: nanosvg (zlib), which draws the menus' panel. The game's third-party
@@ -58,7 +60,8 @@ You do not need the Xbox SDK. You need the tools of the game's Linux build
   bison 3 and Python's mako. Without them the build still makes the program,
   which then has only the shaders already on the card.
 - A network connection for the first build: `configure.py` downloads musl
-  1.2.5, SDL 3.4.16 and UAM to `build/switch/third_party`.
+  1.2.5, SDL 3.4.16 and UAM to `build/switch/third_party`, and the build
+  FFmpeg 7.1, which it builds with `make` into `build/switch/ffmpeg-guest`.
 
 To install the devkitPro packages:
 
@@ -369,7 +372,9 @@ translation to Winsock that `posix_net.c` does on the other builds, so
 system link and internet play work as on Android. The desktop-only parts of
 `posix_net.c` (URL schemes, Discord, UPnP) are answered as having nothing
 to offer. Voice chat records from a headset in the console's jack
-(`host_microphone.c`).
+(`host_microphone.c`, read through the guest's SDL3 audio stream calls in
+`guest_sdl_switch.c`), and is encoded with the game's Opus, built into the
+guest.
 
 The game is a full Delta Peer, the desktop's (`port/linux/src/delta_peer_game.c`):
 it hosts and joins, with Halo PC's maps, team changes and moderation. It says
@@ -378,6 +383,54 @@ read as Android's (`HALO_DELTA_PLATFORM`, `build.py`), so other machines show
 it as a Switch and a host gives it the Switch's row of the game's
 `DELTA_PLATFORM_POLICY`: games of 16 players, more with
 `network.platform_limits = "off"`.
+
+## The Delta Guide, captures and MCC maps
+
+The game builds none of these for a console (`halo_console_features.h`,
+`halo_port_features.h`). The port's overrides of those two headers add
+capabilities a console opts in with, and the Switch sets them:
+`HALO_CONSOLE_GUIDE`, `HALO_CONSOLE_CAPTURE`, `HALO_CONSOLE_VOICE`,
+`HALO_CONSOLE_MCC` and `HALO_CONSOLE_OWN_MCC_TEXTURES`
+([overrides/README.md](overrides/README.md)). The game includes both headers
+from beside its other headers, where no `-I` reaches, so `build.py` reads the
+overrides ahead of the prefix header (`FORCED_HEADER_OVERRIDES`).
+
+- **The Guide** is the game's (`guide.c`, `social.c`), drawn by
+  `ui_overlay_dk.c`. HOME is the system's, so `delta.hold_back` is on and
+  `controls.delta_button` off on the Switch: Minus held in the menus opens
+  it, as does DELTA in the pause menu. It signs in with Link Profile's key,
+  as the console has no Delta device identity yet
+  (`HALO_CONSOLE_NO_DELTA_IDENTITY`), so it offers no ADD FRIEND for the
+  players in a game, which needs their verified names.
+- **Screenshots** read the back buffer back with the overlay drawn, as
+  `debug.screenshot_every` does (`d3d8_dk.c`, `host_dk.c`'s present): the frame
+  waits for the GPU once, and capture.c's thread writes the PNG to
+  `screenshots/`. Minus and the right stick take one
+  (`controls.capture_buttons`, on here: the Capture button is the system's).
+- **Clips** take a frame before the overlay is drawn, at most one a frame:
+  `DK_COMMAND_CLIP` has the host's 2D engine scale the back buffer into a
+  pitch-linear image of its own, and the host copies it to one of four guest
+  buffers when the frame slot comes round again behind its fence
+  (`frame_begin`), so nothing waits for the GPU. `capture_clips.c` encodes
+  them with FFmpeg's MPEG-4 Part 2 and AAC at up to 1280x720 and 30 frames a
+  second, on the CPU, and writes the MP4 to `clips/`. The guest's FFmpeg is
+  the Android guest's, the movies' Bink decoders, with those encoders and the
+  MP4 muxer added (`tools/switch_ffmpeg.py`, over the game's
+  `tools/android_ffmpeg.py`); `--without-ffmpeg` leaves it out, and with it
+  the movies and the clips.
+- **MCC maps** load from `maps_mcc/` (the game's `mcc_*.c`). Their tags need
+  64 MB at 0x50000000, the first address of the range held for the Xbox
+  window: the window is looked for above it first, and once it is placed the
+  range is reserved, as Custom Edition's tag cache is (`host_memory.c`,
+  `MCC_TAG_BASE`); a map linked elsewhere is mapped only where nothing of the
+  port's is (`host_mcc_memory.c`). Their textures never enter the Xbox's
+  memory: `xbox_textures_dk.c` makes its own copies from
+  `xgpu_mcc_texture_source`, as the Vulkan and bgfx renderers do, and frees
+  them when the map lets its headers go. The game's in-game Workshop
+  downloader is the desktop's (Steam's servers over a WebSocket, zstd and
+  LZMA) and is not here; Workshop items are copied from a PC. MCC's bump
+  attenuation (`mcc_bump_attenuation` in the pixel key, `dk_shaders.c`) is
+  not drawn by the deko3d renderer yet.
 
 ## Overlay commands
 

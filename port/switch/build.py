@@ -61,7 +61,7 @@ try:
 except ImportError:
     PROMPT_FONTS_FLAG = ""
 from tools.linux_build import (compile_launcher, CUSTOM_EDITION_DEFINES, game_browser_defines, LINUX_PROFILE,
-                                MINIUPNPC_DEFINES, pgo_mode, pgo_profile, profile_use_flags, updater_defines,
+                                MINIUPNPC_DEFINES, OPUS_DEFINES, pgo_mode, pgo_profile, profile_use_flags, updater_defines,
                                 XDK_INCLUDE)
 from tools.ninja_syntax import Writer
 from tools.version import VERSION_SOURCES, commit_inputs
@@ -108,6 +108,9 @@ GUEST_IMAGE_BASE = 0x3c000000
 # (ui_overlay.c draws with GL: port/switch/guest/ui_overlay_dk.c is its twin here)
 OPENGL_ONLY = {"d3d8_gl.c", "xbox_textures.c", "xgpu_post.c", "xgpu_shader_cache.c", "ui_overlay.c"}
 GUEST_HOST_ONLY = {"memory_watch.c"}  # replaced by guest_memory_watch.c
+# the overrides of headers the game includes only from beside its other
+# headers, which an -I never reaches: read before the prefix header instead
+FORCED_HEADER_OVERRIDES = ("port/linux/include/halo_console_features.h", "port/linux/include/halo_port_features.h")
 # the overrides of the game's files already announced by this configure run
 _overrides_said: set = set()
 
@@ -341,6 +344,7 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     KCP_DIR = THIRD_DIR / "kcp"
     QRCODEGEN_DIR = THIRD_DIR / "qrcodegen"
     MONOCYPHER_DIR = THIRD_DIR / "monocypher"
+    OPUS_DIR = THIRD_DIR / "opus"
     ZLIB_DIR = THIRD_DIR / "zlib"
     MUSL_MATH_DIR = THIRD_DIR / "musl-math"
     STB_DIR = THIRD_DIR / "stb"
@@ -608,6 +612,32 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
             guest_abi = guest_abi.replace(" -fno-define-target-os-macros", "")
     guest_code = " ".join(GUEST_CODE_FLAGS)
     tool_implicit = [asm_convert, *generated_headers]
+    # ---------- FFmpeg for the guest's ABI: the Android guest's (the movies'
+    # Bink decoders, behind port/linux/src/bink_ffmpeg.c) with the clips'
+    # encoders added, MPEG-4 Part 2, AAC and the MP4 muxer
+    # (port/linux/src/capture_clips.c; tools/switch_ffmpeg.py runs the game's
+    # tools/android_ffmpeg.py). With --without-ffmpeg the guest keeps the
+    # stubs: no movies, and a clip says there is no encoder
+    ffmpeg_guest = BUILD / "ffmpeg-guest"
+    ffmpeg_archives: List[Path] = []
+    ffmpeg_defines: List[str] = []
+    if getattr(sln, "with_ffmpeg", True):
+        ffmpeg_archives = [ffmpeg_guest / "build" / library / f"{library}.a"
+                           for library in ("libavformat", "libavcodec", "libswscale", "libswresample", "libavutil")]
+        n.rule(
+            name="switch_ffmpeg",
+            command=(f"$python {TOOLS_DIR / 'switch_ffmpeg.py'} {ffmpeg_guest} --game {game} --switch-build {BUILD} "
+                     f"--ndk {ndk}"),
+            description="SWITCH FFMPEG (the guest's movies and clips)",
+            restat=True,
+            pool="console",
+        )
+        ffmpeg_stamp = ffmpeg_guest / "ffmpeg.stamp"
+        n.build(outputs=[*ffmpeg_archives, ffmpeg_stamp], rule="switch_ffmpeg",
+                implicit=[TOOLS_DIR / "switch_ffmpeg.py", game / "tools" / "android_ffmpeg.py", alltypes, syscall_h,
+                          version_h])
+        tool_implicit.append(ffmpeg_stamp)
+        ffmpeg_defines = ["-DHALO_BINK_FFMPEG", f"-I{ffmpeg_guest}/src", f"-I{ffmpeg_guest}/build"]
     linux_profile = game / LINUX_PROFILE
     profile = pgo_profile(sln, linux_profile if pgo_mode(sln) == "train" else None, [linux_profile], guest_cc)
     profile_flags = " ".join(profile_use_flags(profile))
@@ -678,6 +708,13 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     override_includes = " ".join(f"-I{overrides_dir / where}" for where in
                                  ("source", "source/main", "source/cseries", "port/linux/include", "port/linux/src")
                                  if (overrides_dir / where).is_dir())
+    # (a header the game includes from beside another of its headers, as
+    # halo_port_limits.h includes "halo_console_features.h", is found in the
+    # game's own directory before any -I: such an override is read ahead of
+    # the prefix header instead, and its include guard leaves the game's
+    # copy empty when the game includes it)
+    forced_overrides = [overrides_dir / name for name in FORCED_HEADER_OVERRIDES if (overrides_dir / name).is_file()]
+    override_includes = " ".join([*(f"-include {header}" for header in forced_overrides), override_includes])
     # (an override under port/linux/game that the game has no file for is an
     # addition: a game unit of the port's own, compiled with the game's, on
     # its way upstream like the rest)
@@ -702,8 +739,8 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
 
     game_cflags = " ".join([
         guest_abi, guest_code, " ".join(game_flags), profile_flags,
-        f"-include {prefix_header}", f"-include {semantics_header}",
         override_includes,
+        f"-include {prefix_header}", f"-include {semantics_header}",
         f"-I{LINUX_DIR}/include",
         # the headers of the port's own game units (port/linux/game), for the
         # game sources that call them
@@ -741,12 +778,17 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     # the platform layer shared with Linux, and the guest runtime
     platform_cflags = " ".join([
         guest_abi, guest_code, "-std=gnu11", "-D_GNU_SOURCE", "-DHALO_LINUX_PLATFORM_LAYER", "-w", profile_flags,
-        f"-include {prefix_header}", f"-include {platform_semantics_header}",
+        # (SDL's headers take alloca from musl's alloca.h, as the C library
+        # declares it, instead of a macro for the builtin, whose size_t is
+        # not the guest's: voice.c reads SDL's before stdlib.h)
+        "-DHAVE_ALLOCA_H",
         override_includes,
+        f"-include {prefix_header}", f"-include {platform_semantics_header}",
         f"-I{LINUX_DIR}/src", f"-I{LINUX_DIR}/include", f"-I{ANDROID_DIR}/guest/runtime",
         f"-I{ANDROID_DIR}/include", f"-I{TOML_DIR}", f"-I{EXPAT_DIR}", f"-I{KCP_DIR}", f"-I{QRCODEGEN_DIR}",
-        f"-I{MONOCYPHER_DIR}", f"-I{ZLIB_DIR}", f"-I{game}/source", f"-I{game}/source/cseries",
+        f"-I{MONOCYPHER_DIR}", f"-I{ZLIB_DIR}", f"-I{OPUS_DIR / 'include'}", f"-I{game}/source", f"-I{game}/source/cseries",
         f"-I{SDL_DIR}/include", f"-I{gl_include}", *libc_includes, f"-idirafter {_quote(xdk_include)}",
+        *ffmpeg_defines,
     ])
     # (the overlay's fonts are plain C, drawn in the guest: stb_truetype)
     guest_posix = {"posix_ui_font.c": f"-I{STB_DIR}"}
@@ -789,6 +831,13 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     # (port/third_party/monocypher; p2p_crypto.c)
     for name in ("monocypher.c", "monocypher-ed25519.c"):
         objects.append(guest_object(MONOCYPHER_DIR / name, platform_cflags))
+    # voice chat's codec (port/third_party/opus; voice.c), as the desktop
+    # builds have it: the Switch has the Guide's voice (HALO_CONSOLE_VOICE)
+    opus_cflags = " ".join([guest_abi, guest_code, "-std=gnu11", profile_flags, *OPUS_DEFINES, *libc_includes,
+                            *(f"-I{OPUS_DIR / name}" for name in ("include", "celt", "silk", "silk/float")), "-w"])
+    for line in (OPUS_DIR / "sources.txt").read_text().splitlines():
+        if line.strip():
+            objects.append(guest_object(OPUS_DIR / line.strip(), opus_cflags))
     # the port's zlib (not the CPU's CRC32 instructions, which the guest's
     # assembly step is not told it may use)
     for name in ZLIB_SOURCES:
@@ -853,7 +902,8 @@ def generate(n: Writer, sln: Any, port: ConsolePort) -> None:
     for name in ("d3d8_dk.c", "xbox_textures_dk.c", "nv2a_vsh_dk.c", "nv2a_psh_dk.c", "dk_shaders.c",
                  "ui_overlay_dk.c", "guest_sdl_switch.c", "game_console_gaps.c"):
         objects.append(guest_object(PORT_DIR / "guest" / name, platform_cflags))
-    n.build(outputs=image, rule="switch_guest_link", inputs=objects, implicit=[libguestc, linker_script])
+    n.build(outputs=image, rule="switch_guest_link", inputs=[*objects, *ffmpeg_archives],
+            implicit=[libguestc, linker_script])
 
     # ---------- the host, built with devkitA64
 

@@ -23,7 +23,8 @@ generator (chupathingyce/tools/port_settings.py) and its rows:
   PC version's screen files define, so Video Setup's file
   (ce/...video_settings.xml) is written too, for the three rows' widgets.
 - The main menu (chupathingy/main_menu.xml): no QUIT, and B does not offer
-  to quit: the console's HOME button is the way out.
+  to quit: the console's HOME button is the way out. DELTA's picture and row
+  (delta.menu_item) are the Switch's too, as it has the Delta Guide.
 - Controls Setup's controller gets a third page under SHOW, GYRO (the game's
   menu_functions.c knows the page on the Switch): gyro aim always, only on
   zoom or off, its two sensitivities and two inverts (input.gyro_*, which the
@@ -97,6 +98,11 @@ ROWS_LEFT_OUT = {"display.menus", "network.join_from_clipboard", "network.copy_t
 QUIT_ROW = '<child widget="chupathingy/main_menu_quit"'
 QUIT_HANDLERS = {'<on event="back" open="chupathingy/quit_screen"/>': '<on event="back" run="NULL"/>',
                  '<on event="b" open="chupathingy/quit_screen"/>': '<on event="b" run="NULL"/>'}
+# DELTA's picture and row (delta.menu_item), the desktop's and Android's: the
+# Switch has the Delta Guide too (HALO_CONSOLE_GUIDE). The game puts the row
+# in the list itself (menu_tags.c, main_menu_delta_patch)
+DELTA_PLATFORM = ('platform="desktop android"', 'platform="desktop android switch"')
+DELTA_WIDGETS = 2
 
 
 def switch_rows(rows: list) -> list:
@@ -137,9 +143,9 @@ def switch_spec(spec: dict, extra_rows: list) -> dict:
 
 
 def main_menu_lines() -> list:
-    """the game's main menu without QUIT"""
+    """the game's main menu without QUIT, and with DELTA's picture and row"""
     lines = (MENUS / MAIN_MENU).read_text().split("\n")
-    kept, changed = [], 0
+    kept, changed, delta = [], 0, 0
     for line in lines:
         if QUIT_ROW in line:
             changed += 1
@@ -148,9 +154,15 @@ def main_menu_lines() -> list:
             if old in line:
                 line = line.replace(old, new)
                 changed += 1
+        if DELTA_PLATFORM[0] in line:
+            line = line.replace(*DELTA_PLATFORM)
+            delta += 1
         kept.append(line)
     if changed != 1 + len(QUIT_HANDLERS):
         raise SystemExit(f"{MAIN_MENU}: expected the quit row and its two handlers, found {changed}")
+    if delta != DELTA_WIDGETS:
+        raise SystemExit(f"{MAIN_MENU}: expected DELTA's picture and row for desktop and Android, "
+                         f"found {delta}")
     return kept
 
 

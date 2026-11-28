@@ -46,6 +46,7 @@ enum
 	DK_COMMAND_HUD_IMAGE,
 	DK_COMMAND_HUD_FORGET,
 	DK_COMMAND_PICTURE,
+	DK_COMMAND_CLIP,
 };
 
 /* a surface's kind, as the host makes its image */
@@ -136,6 +137,23 @@ struct dk_command_present
 	struct dk_command_header header;
 	struct dk_surface back_buffer;
 	uint32_t screenshot;
+};
+
+/* a clip's frame (capture_clips.c, clips.enabled): the back buffer as it is
+now, before the overlay is drawn over it, scaled to width by height into a
+pitch-linear image of the host's, without waiting for the GPU. Once the GPU
+has drawn it (the host sees its frame's fence, FRAMES presents on) the host
+copies it to the guest address pixels, width * height * 4 bytes, R G B A in
+memory, from the top, and stores 1 in the uint32_t at the guest address
+ready; 2 when it could not read it */
+struct dk_command_clip
+{
+	struct dk_command_header header;
+	struct dk_surface source;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pixels;
+	uint32_t ready;
 };
 
 /* ---------- draws (DEKO3D.md, phase 6)
@@ -293,15 +311,14 @@ enum
 	DK_TEXTURE_BC3,
 };
 
-/* Halo PC keeps some bitmaps' channels elsewhere than the Xbox's shaders
-read them (D3DCOMMON_PORT_PC_METER and _MULTIPURPOSE, which Warthog's Custom
+/* Halo PC keeps a multipurpose map's channels elsewhere than the Xbox's
+shaders read them (D3DCOMMON_PORT_PC_MULTIPURPOSE, which Warthog's Custom
 Edition loading sets); the image is sampled with each channel taken from
 where Halo PC keeps it, through dk_command_texture's swizzle (below), as
 xbox_textures.c's OpenGL swizzle does, so a compressed one stays compressed:
-the HUD meter's fill order (alpha) sampled as the colour and its shape (red)
-as alpha; a multipurpose map's red, green, blue and alpha from its blue,
-green, alpha and red */
-#define DK_SWIZZLE_PC_METER 0x00030303u
+its red, green, blue and alpha from its blue, green, alpha and red. (A HUD
+meter's, D3DCOMMON_PORT_PC_METER, are read where they are by the game's
+meter shader since its 0.9.2a, as on every renderer) */
 #define DK_SWIZZLE_PC_MULTIPURPOSE 0x00030102u
 
 /* makes image id (or, if it is one of the same shape, writes its texels

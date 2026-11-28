@@ -37,7 +37,7 @@ Nintendo's SDK: the port is built with devkitPro's free tools.
 Working. It boots and plays on Switch hardware. The port is maintained by
 [thelinkin3000](https://github.com/thelinkin3000).
 
-- **Network:** the game's wire, `chupa-44a` (the game's 0.9.1a). Joins
+- **Network:** the game's wire, `chupa-44b` (the game's 0.9.2a). Joins
   hosts of network versions 11 through 45, as the signed compatibility table
   allows, OpenCE's current hosts (44) among them.
 - **Online:** **Multiplayer > ONLINE GAMES** lists the games online and
@@ -47,6 +47,13 @@ Working. It boots and plays on Switch hardware. The port is maintained by
   [stats.chupathingy.org](https://stats.chupathingy.org), so your games count
   toward you.
 - **System Link:** joins PC hosts and consoles on your network.
+- **Delta Guide:** friends, parties, clans and voice chat, as on the PCs.
+  Hold Minus in the menus, or choose DELTA in the pause menu. Voice chat
+  uses a headset in the console's jack.
+- **Screenshots and clips:** press Minus and the right stick for a
+  screenshot. With `clips.enabled` on, Minus and the left stick save the
+  last 30 seconds as a video. Clips are encoded on the CPU as you play,
+  which costs frames, so they are off by default.
 - **Display:** 720 lines by default, drawn and scaled to the console's
   1280x720 in the hands or 1920x1080 docked; 480, 900 or 1080 by choice, and
   dynamic resolution that steps down while the GPU falls behind. Docking and
@@ -57,14 +64,17 @@ Working. It boots and plays on Switch hardware. The port is maintained by
   controller.
 - **Maps:** the Xbox disc's campaign and multiplayer maps, unpacked from a
   disc image by the console itself; Halo PC's Custom Edition maps too, in
-  `custom_maps/`.
+  `custom_maps/`; and Halo MCC's maps, Steam Workshop ones among them, in
+  `maps_mcc/`.
 - **Menus:** Chupathingy's, with the console's rows added in Video Setup
   (RESOLUTION LIMIT, DYNAMIC RESOLUTION, CPU CLOCK) and the GYRO page in
   Controls Setup. There is no QUIT: the HOME button is the way out.
 - **Updates itself:** a release build looks for a newer release when it
   starts and offers it (`update.auto` turns that off).
 - **Not yet:** the shared shader keys that would make a new console's first
-  start quicker.
+  start quicker; downloading Steam Workshop maps on the console (copy them
+  from a PC); MCC maps' bump attenuation, which the deko3d renderer
+  leaves out; and Custom Edition bitmaps in BC7, which it doesn't draw yet.
 
 ## What you need
 
@@ -123,6 +133,9 @@ Everything is in `sd:/switch/ChupaThingyCE/`:
 | Settings | `config.toml` |
 | Retail maps | `maps/` |
 | Custom Edition maps | `maps_ce/` |
+| MCC maps | `maps_mcc/` |
+| Screenshots | `screenshots/` |
+| Clips | `clips/` |
 | Saves | `save/` |
 | The game's log | `logs/debug.txt` |
 | The program's log | `halo.log` |
@@ -140,6 +153,34 @@ The older `custom_maps/` folder is still read.
 
 When you join a game with a map you don't have, it is downloaded from the
 host while you wait in the lobby.
+
+### MCC maps
+
+Halo MCC's Halo CE maps go in `sd:/switch/ChupaThingyCE/maps_mcc/`. The map
+lists mark them [MCC]. The console can't download from the Steam
+Workshop. Copy an item's folder from a PC instead, from
+`steamapps/workshop/content/976730/<item id>` to `maps_mcc/<item id>`, and
+leave what is inside as it is. Some maps need MCC's shared `bitmaps.map` and
+`sounds.map` too. The game's
+[MCC maps guide](https://github.com/ChupathingyCE/chupathingyce/blob/main/docs/mcc_maps.md)
+says which and where they go.
+
+### The Delta Guide
+
+Hold Minus for about half a second in the menus, or choose DELTA in the
+pause menu. Friends, parties and clans need your Delta profile, so link it
+with Link Profile first.
+
+### Screenshots and clips
+
+Press Minus and the right stick together for a screenshot. It is saved to
+`screenshots/` as a PNG. The Capture button belongs to the Switch, which
+keeps it for its own album.
+
+Clips are off by default. Set `clips.enabled = true` in `config.toml` and
+restart. From then on, Minus and the left stick save the last
+`clips.seconds` (30 by default) to `clips/` as an MP4 video. The video is
+encoded on the CPU while you play, which costs frames.
 
 ### The Ultrahand overlay
 
@@ -177,6 +218,9 @@ Switch's own:
 | `input.gyro_invert_vertical` | `false` | Turn the gyroscope's up and down around. |
 | `game.overlay_commands` | `true` | Take commands from the Ultrahand overlay. |
 | `game.terminal_output` | `"menus"` | Where the game's messages show at the bottom left: `"menus"`, `"console"`, `"always"` or `"none"`. |
+| `delta.hold_back` | `true` | Open the Delta Guide by holding Minus in the menus. |
+| `controls.delta_button` | `false` | Open the Delta Guide with a Guide button. The Switch keeps HOME for itself. |
+| `controls.capture_buttons` | `true` | Minus and the right stick take a screenshot. Minus and the left stick save a clip. |
 | `debug.log_files` | `true` | Write `debug.txt` and `halo.log`. With `false` nothing is kept to say what went wrong. |
 | `update.auto` | `true` | Check for a newer release at start. |
 

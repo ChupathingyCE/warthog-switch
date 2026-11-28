@@ -57,7 +57,7 @@ the default under `HALO_SWITCH_CONSOLE`; "console" is upstream's behaviour and
 the default elsewhere; "none" and "always" as they say. The reference's rule,
 on upstream's `terminal_render` values.
 
-- Base: upstream `2e5eac00` (v0.9.1a).
+- Base: upstream `25552b2a` (v0.9.2a).
 - Upstream: pull request to be opened (the setting with its "console"
   default changes nothing on the desktop; a console build could turn
   "menus" on through a capability of `halo_console_features.h`).
@@ -68,7 +68,7 @@ The call of `overlay_commands_update` after `telnet_console_process` in both
 main loops (the pregame's and the game's), and its prototype. For
 `port/linux/game/overlay_commands.c`.
 
-- Base: upstream `2e5eac00` (v0.9.1a), whose own
+- Base: upstream `25552b2a` (v0.9.2a). v0.9.1a's own
   `first_person_field_of_view_widened` replaced the copy added here 2026-11-07.
 
 ## port/linux/src/port_config.h
@@ -89,26 +89,60 @@ The settings table with the port's two rows: `game.overlay_commands` (under
 `HALO_SWITCH_CONSOLE`), with `config_set_text` and `config_boolean_setting`,
 for `port/linux/game/overlay_commands.c`; and `game.terminal_output`, for
 `source/interface/terminal.c`. Each goes upstream with the override that
-reads it.
+reads it. Under `HALO_SWITCH_CONSOLE` too, for the Guide and capture of
+`halo_console_features.h` above: `delta.hold_back` on and
+`controls.delta_button` off (the Switch keeps HOME, so Minus held opens the
+Guide), and the screenshot and clip rows written in the Switch's
+config.toml, `controls.capture_buttons` on (Minus and a stick: the Capture
+button is the system's). Each of the Switch's rows stands in for one of
+the game's alone, so rows the game adds beside them (0.9.2a's
+`delta.confirm_button` and `delta.rumble`) reach the Switch as they are.
 
-- Base: upstream `2e5eac00` (v0.9.1a). The game's `tools/version.py` names
+- Base: upstream `25552b2a` (v0.9.2a). The game's `tools/version.py` names
   `port_config.c` among the units built with the version's defines; the
   override gets them too (`port/switch/build.py`).
 
-## port/linux/game/stubbs_functions.c
+## port/linux/include/halo_console_features.h
 
-## port/linux/include/stubbs_functions.h
+## port/linux/include/halo_port_features.h
 
-The game at v0.9.1a does not build for a console. With Stubbs mode left out
-(`HALO_CONSOLE_NO_STUBBS`), the header hid the object "cannot" bits that
-`damage.c` and `units.c` name in every build, and `stubbs_functions.c`
-defined `stubbs_functions_object_cannot` again beside the header's empty
-console one. The enum is moved out of the switch, and the function gets the
-console guard: the v0.9.1a files with that part of upstream's own fix.
+The Delta Guide, screenshots and clips, voice chat and MCC maps on the
+Switch. The game leaves each out of every console with no way back in (a
+console's define sets `HALO_CONSOLE_NO_GUIDE`, `_NO_CAPTURE` and `_NO_VOICE`
+unless they are already set, and makes `HALO_MCC` 0), so these add four
+capabilities a console opts in with, and the Switch's block sets them:
+`HALO_CONSOLE_GUIDE` (`HALO_GUIDE`), `HALO_CONSOLE_CAPTURE` (`HALO_CAPTURE`,
+which also lets an Android-built guest have it), `HALO_CONSOLE_VOICE`
+(`HALO_PORT_VOICE` and `_AUDIO`) and `HALO_CONSOLE_MCC` (`HALO_MCC`), with
+`HALO_CONSOLE_OWN_MCC_TEXTURES` for `mcc_texture_bridge.c`, below. Every
+other build reads them as before.
 
-- Base: upstream `2e5eac00` (v0.9.1a).
-- Upstream: fixed on main by ChupathingyCE/chupathingyce 9666c96d (in #1287).
-  Both go once the submodule is at a release that has it.
+The game includes both from beside `halo_port_limits.h`, where an `-I` never
+reaches, so the build reads these two ahead of the prefix header
+(`FORCED_HEADER_OVERRIDES`, `port/switch/build.py`) and their include guards
+leave the game's copies empty.
+
+- Base: upstream `25552b2a` (v0.9.2a).
+- Needs: `port_config.c` below (the Switch's Guide and capture rows), the
+  port's guest (`ui_overlay_dk.c`, `d3d8_dk.c`'s screenshots and clips,
+  `xbox_textures_dk.c`'s MCC textures, `guest_sdl_switch.c`'s microphone,
+  `game_console_gaps.c` gated), Opus and FFmpeg's encoders in the guest
+  (`build.py`, `tools/switch_ffmpeg.py`) and the host's microphone, clip
+  readback and MCC tag range.
+- Upstream: pull request to be opened (the capabilities change nothing for
+  a build that does not set them).
+
+## port/linux/src/mcc_texture_bridge.c
+
+MCC maps' textures with the deko3d renderer: the bridge makes OpenGL copies
+of the large ones as a map loads (`mcc_texture_bridge_prepare`), which the
+Switch, drawing with deko3d and no OpenGL context, cannot; under
+`HALO_CONSOLE_OWN_MCC_TEXTURES` it leaves them to the renderer, as it does
+for bgfx and Vulkan, and `port/switch/guest/xbox_textures_dk.c` makes its
+own from `xgpu_mcc_texture_source`.
+
+- Base: upstream `25552b2a` (v0.9.2a).
+- Upstream: with the capabilities above.
 
 The first was `source/memory/data.c` (the data arrays' address under the
 moved window, for checkpoints, cutscene skips and the dynamic lights), from
@@ -121,4 +155,8 @@ client's 32 KB reads, the sound mixer's lock, the dynamic vertex buffers' 16
 storages), went upstream as ChupathingyCE/chupathingyce#450 to #457, all
 merged the same day, and left with the repin to `f5abeb99`. The settings
 rows of #450 and #451 were mended here for a few hours of 2026-10-24 until
-upstream took the same fix (ChupathingyCE/chupathingyce#458).
+upstream took the same fix (ChupathingyCE/chupathingyce#458). The Stubbs
+"cannot" bits' console build fix (`port/linux/game/stubbs_functions.c` and
+`port/linux/include/stubbs_functions.h`, v0.9.1a's files with upstream's
+9666c96d in them) was carried from 2026-11-15 until the repin to v0.9.2a,
+which has it.

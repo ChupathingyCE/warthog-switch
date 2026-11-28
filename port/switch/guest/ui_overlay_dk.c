@@ -683,6 +683,23 @@ static float pill_width(const char *label, float size)
 	return width > size * 1.3f ? width : size * 1.3f;
 }
 
+/* ui_overlay_set_confirm_swap's (the game's ui_overlay.c): the Guide's A
+and B drawn swapped, for its CONFIRM BUTTON: RIGHT (delta.confirm_button) */
+static int confirm_swap;
+
+void ui_overlay_set_confirm_swap(int swap)
+{
+	confirm_swap = swap != 0;
+}
+
+/* the button a prompt's A or B is pressed with (the keyboard's keys stay) */
+static int confirm_button(int button)
+{
+	if (!confirm_swap || scheme() == 0)
+		return button;
+	return button == UI_BUTTON_A ? UI_BUTTON_B : button == UI_BUTTON_B ? UI_BUTTON_A : button;
+}
+
 float ui_overlay_button_width(int button, float size)
 {
 	int device = scheme();
@@ -690,6 +707,7 @@ float ui_overlay_button_width(int button, float size)
 
 	if (button < 0 || button >= NUMBER_OF_UI_BUTTONS)
 		return 0.0f;
+	button = confirm_button(button);
 	size = scaled(size);
 	/* (an Xbox-like pad's: its icon) */
 	if (device == 1 && button_icon(button) >= 0)
@@ -716,6 +734,7 @@ float ui_overlay_button(int button, float size, float x, float y, unsigned int c
 
 	if (button < 0 || button >= NUMBER_OF_UI_BUTTONS)
 		return 0.0f;
+	button = confirm_button(button);
 	y = scaled_top(size, y);
 	size = scaled(size);
 	label = pill_label(device, button);
@@ -773,6 +792,14 @@ program has no noise map yet) */
 int ui_overlay_keyboard(void)
 {
 	return scheme() == 0;
+}
+
+/* the device the prompts are drawn for (halo_prompt_schemes.h's: 0 the
+keyboard, then the pads), so that the Guide's words name its buttons as
+their glyphs show them: the one used last, as scheme() draws them */
+int ui_overlay_prompt_scheme(void)
+{
+	return scheme();
 }
 
 float ui_overlay_key_width(const char *label, float size)

@@ -37,3 +37,15 @@ host_dk_hud_ready
 host_sdl_gamepad_id
 host_sdl_gamepad_vendor
 host_sdl_gamepad_product
+# voice chat's microphone (port/switch/host/host_sdl2.c over host_microphone.c),
+# for port/switch/guest/guest_sdl_switch.c's SDL_GetAudioStreamData, _Available
+# and SDL_ClearAudioStream: data is a guest address
+host_sdl_get_audio_stream_data
+host_sdl_get_audio_stream_available
+host_sdl_clear_audio_stream
+# the battery (port/switch/host/host_sdl2.c, over the console's power service)
+# and a key's keycode by its scancode, for port/switch/guest/guest_sdl_switch.c's
+# SDL_GetPowerInfo and SDL_GetKeyFromScancode
+host_power_percent
+host_power_state
+host_sdl_key_from_scancode

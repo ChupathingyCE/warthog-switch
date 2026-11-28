@@ -9,8 +9,10 @@ answers, and the files and folders through the platform layer's posix
 helpers (posix.h), which the host answers.
 */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <SDL3/SDL.h>
 
 #include "posix.h"
@@ -19,6 +21,29 @@ helpers (posix.h), which the host answers.
 unsigned int host_sdl_gamepad_id(unsigned int gamepad);
 unsigned int host_sdl_gamepad_vendor(unsigned int gamepad);
 unsigned int host_sdl_gamepad_product(unsigned int gamepad);
+int host_power_percent(void);
+int host_power_state(void);
+int host_sdl_key_from_scancode(int scancode);
+
+/* the battery, as the host's power service says it (SDL3's states: on
+battery, charging, charged) */
+SDL_PowerState SDL_GetPowerInfo(int *seconds, int *percent)
+{
+	if (seconds)
+		*seconds = -1;
+	if (percent)
+		*percent = host_power_percent();
+	return (SDL_PowerState)host_power_state();
+}
+
+/* a key's keycode by its scancode (the modifiers left as SDL3 leaves them
+for a key event's own keycode) */
+SDL_Keycode SDL_GetKeyFromScancode(SDL_Scancode scancode, SDL_Keymod modstate, bool key_event)
+{
+	(void)modstate;
+	(void)key_event;
+	return (SDL_Keycode)host_sdl_key_from_scancode((int)scancode);
+}
 
 const char *SDL_getenv(const char *name)
 {
@@ -278,4 +303,120 @@ void *dlsym(void *handle, const char *name)
 	(void)handle;
 	(void)name;
 	return NULL;
+}
+
+/* ---------- voice chat (port/linux/src/voice.c): the headset's microphone,
+the host's libnx audin (port/switch/host/host_microphone.c), opened as the
+guest runtime's SDL_OpenAudioDeviceStream opens any stream */
+
+int host_sdl_get_audio_stream_data(unsigned int stream, void *data, int length);
+int host_sdl_get_audio_stream_available(unsigned int stream);
+void host_sdl_clear_audio_stream(unsigned int stream);
+
+/* (the host starts its SDL whole before the guest runs, and the microphone
+needs no subsystem of SDL's) */
+SDL_InitFlags SDL_WasInit(SDL_InitFlags flags)
+{
+	return flags;
+}
+
+bool SDL_InitSubSystem(SDL_InitFlags flags)
+{
+	(void)flags;
+	return true;
+}
+
+/* (one microphone, the system's: none to choose by name) */
+SDL_AudioDeviceID *SDL_GetAudioRecordingDevices(int *count)
+{
+	if (count)
+		*count = 0;
+	return NULL;
+}
+
+int SDL_GetAudioStreamData(SDL_AudioStream *stream, void *data, int length)
+{
+	return host_sdl_get_audio_stream_data((unsigned int)(uintptr_t)stream, data, length);
+}
+
+int SDL_GetAudioStreamAvailable(SDL_AudioStream *stream)
+{
+	return host_sdl_get_audio_stream_available((unsigned int)(uintptr_t)stream);
+}
+
+bool SDL_ClearAudioStream(SDL_AudioStream *stream)
+{
+	host_sdl_clear_audio_stream((unsigned int)(uintptr_t)stream);
+	return true;
+}
+
+/* (the microphone keeps recording; voice chat clears it when it resumes) */
+bool SDL_PauseAudioStreamDevice(SDL_AudioStream *stream)
+{
+	(void)stream;
+	return true;
+}
+
+/* (voice chat's timing: the monotonic clock, in nanoseconds) */
+Uint64 SDL_GetPerformanceCounter(void)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (Uint64)now.tv_sec * 1000000000u + (Uint64)now.tv_nsec;
+}
+
+Uint64 SDL_GetPerformanceFrequency(void)
+{
+	return 1000000000u;
+}
+
+/* (clips' frame times, capture_clips.c: nanoseconds since the first ask,
+as SDL counts them from its start) */
+Uint64 SDL_GetTicksNS(void)
+{
+	static Uint64 start;
+	Uint64 now = SDL_GetPerformanceCounter();
+
+	if (!start)
+		start = now;
+	return now - start;
+}
+
+/* (a file whole, as SDL reads it: voice chat's test feed, a WAV) */
+void *SDL_LoadFile(const char *file, size_t *datasize)
+{
+	FILE *stream = fopen(file, "rb");
+	unsigned char *data = NULL;
+	size_t size = 0, room = 0, got;
+
+	if (datasize)
+		*datasize = 0;
+	if (!stream)
+		return NULL;
+	for (;;)
+	{
+		if (size + 1 >= room)
+		{
+			unsigned char *more = realloc(data, room ? room * 2 : 65536);
+
+			if (!more)
+			{
+				free(data);
+				fclose(stream);
+				return NULL;
+			}
+			data = more;
+			room = room ? room * 2 : 65536;
+		}
+		got = fread(data + size, 1, room - size - 1, stream);
+		if (!got)
+			break;
+		size += got;
+	}
+	fclose(stream);
+	data[size] = 0;
+	if (datasize)
+		*datasize = size;
+	return data;
 }

@@ -1150,6 +1150,8 @@ void host_dk_frame_report(struct host_dk_frame_report *report)
 	slow.presents = 0;
 }
 
+static void clip_read_retire(int frame);
+
 static void frame_begin(void)
 {
 	/* (under the lock: the guest's other threads read the fences through
@@ -1170,6 +1172,8 @@ static void frame_begin(void)
 			dk.serial_retired = dk.fence_serial[dk.frame];
 	}
 	pthread_mutex_unlock(&dk_lock);
+	/* (the fence waited for, or already seen passed by fences_poll) */
+	clip_read_retire(dk.frame);
 	gpu_timing_frame_begin();
 	profile_frame_begin();
 	command_memory_begin();
@@ -1800,6 +1804,115 @@ static int readback_make(uint32_t width, uint32_t height)
 	dk.readback_height = height;
 	dk.readback_pitch = pitch;
 	return 1;
+}
+
+/* ---------- a clip's frames (DK_COMMAND_CLIP)
+
+One a frame at most, so each frame slot has its own: the back buffer scaled
+into a pitch-linear image in CPU-cached memory, by the 2D engine (not a copy
+to a buffer: the back buffer is compressed, readback_make), copied out to the
+guest when the slot comes round again behind its fence (frame_begin), the
+cache invalidated first. The game draws on meanwhile. */
+struct clip_read
+{
+	DkMemBlock memory;
+	DkImage image;
+	uint32_t width, height, pitch, size;
+	uint32_t pixels, ready;
+	int pending;
+};
+
+static struct clip_read clip_reads[FRAMES];
+
+static void clip_answer(uint32_t ready, uint32_t value)
+{
+	if (ready)
+		__atomic_store_n((uint32_t *)(uintptr_t)ready, value, __ATOMIC_RELEASE);
+}
+
+static int clip_image_make(struct clip_read *read, uint32_t width, uint32_t height)
+{
+	DkImageLayoutMaker maker;
+	DkImageLayout layout;
+	uint32_t pitch = (width * 4 + DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1) & ~(uint32_t)(DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1);
+
+	if (read->memory && read->width == width && read->height == height)
+		return 1;
+	dkImageLayoutMakerDefaults(&maker, dk.device);
+	maker.flags = DkImageFlags_PitchLinear | DkImageFlags_Usage2DEngine;
+	maker.format = DkImageFormat_RGBA8_Unorm;
+	maker.dimensions[0] = width;
+	maker.dimensions[1] = height;
+	maker.pitchStride = pitch;
+	dkImageLayoutInitialize(&layout, &maker);
+	if (read->memory)
+		dkMemBlockDestroy(read->memory);
+	read->size = (uint32_t)dkImageLayoutGetSize(&layout);
+	read->memory = memory_block(read->size, DkMemBlockFlags_CpuCached | DkMemBlockFlags_GpuCached |
+		DkMemBlockFlags_Image, NULL);
+	read->width = read->height = 0;
+	if (!read->memory)
+		return 0;
+	dkImageInitialize(&read->image, &layout, read->memory, 0);
+	read->width = width;
+	read->height = height;
+	read->pitch = pitch;
+	return 1;
+}
+
+static void clip_read(const struct dk_command_clip *command)
+{
+	struct target *source = target_get(&command->source);
+	struct clip_read *read = &clip_reads[dk.frame];
+	DkImageView from_view, to_view;
+	DkImageRect from, to = { 0, 0, 0, command->width, command->height, 1 };
+
+	if (!source || read->pending || !command->pixels || !command->width || !command->height ||
+		command->width > 4096 || command->height > 4096 || !clip_image_make(read, command->width, command->height))
+	{
+		clip_answer(command->ready, 2);
+		return;
+	}
+	from.x = from.y = from.z = 0;
+	from.width = SURFACE_PIXEL_WIDTH(&source->surface);
+	from.height = SURFACE_PIXEL_HEIGHT(&source->surface);
+	from.depth = 1;
+	dkImageViewDefaults(&from_view, &source->image);
+	dkImageViewDefaults(&to_view, &read->image);
+	/* (the frame's draws into the back buffer done before the 2D engine
+	reads it, and its read done before the overlay draws over it) */
+	barrier(DkBarrier_Fragments, 0);
+	dkCmdBufBlitImage(dk.commands, &from_view, &from, &to_view, &to, DkBlitFlag_FilterLinear, 0);
+	barrier(DkBarrier_Full, 0);
+	read->pixels = command->pixels;
+	read->ready = command->ready;
+	read->pending = 1;
+	dk.recorded = 1;
+}
+
+/* (frame_begin) the slot's clip frame, drawn by now, to the guest */
+static void clip_read_retire(int frame)
+{
+	struct clip_read *read = &clip_reads[frame];
+	const unsigned char *rows;
+	unsigned char *out;
+	uint32_t row, row_bytes;
+
+	if (!read->pending)
+		return;
+	read->pending = 0;
+	if (queue_faulted())
+	{
+		clip_answer(read->ready, 2);
+		return;
+	}
+	rows = (const unsigned char *)dkMemBlockGetCpuAddr(read->memory);
+	out = (unsigned char *)(uintptr_t)read->pixels;
+	row_bytes = read->width * 4;
+	armDCacheFlush((void *)rows, read->size);
+	for (row = 0; row < read->height; row++)
+		memcpy(out + (size_t)row * row_bytes, rows + (size_t)row * read->pitch, row_bytes);
+	clip_answer(read->ready, 1);
 }
 
 static void present(const struct dk_command_present *command)
@@ -4339,6 +4452,10 @@ static void submit_run(const unsigned char *at, uint32_t size)
 		case DK_COMMAND_HUD_FORGET:
 			host_dk_hud_forget();
 			break;
+		case DK_COMMAND_CLIP:
+			if (header->size >= sizeof(struct dk_command_clip))
+				clip_read((const struct dk_command_clip *)header);
+			break;
 		case DK_COMMAND_PICTURE:
 			if (header->size >= sizeof(struct dk_command_picture))
 			{
@@ -4733,6 +4850,7 @@ static const char *trace_kind_name(uint32_t kind)
 	case DK_COMMAND_TEXTURE_ROWS: return "texture rows";
 	case DK_COMMAND_COMPOSITE: return "composite";
 	case DK_COMMAND_PICTURE: return "picture";
+	case DK_COMMAND_CLIP: return "clip";
 	case DK_COMMAND_VISIBILITY_END: return "visibility";
 	case DK_COMMAND_MARKER: return "pass";
 	case TRACE_SUBMIT: return "SUBMISSION";
